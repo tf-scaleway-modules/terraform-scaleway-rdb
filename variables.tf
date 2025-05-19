@@ -14,6 +14,9 @@ variable "region" {
 variable "username" {
   type        = string
 }
+variable "password" {
+  type        = string
+}
 
 variable "node_type" {
   type = string
