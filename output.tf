@@ -4,8 +4,10 @@ output "pg_conn_str" {
     "postgres://%s:%s@%s:%d/%s?sslmode=disable",
     var.username,
     var.password,
-    scaleway_rdb_instance.main.private_network[0].hostname,
-    scaleway_rdb_instance.main.private_network[0].port,
+    scaleway_rdb_instance.main.load_balancer.ip,
+    scaleway_rdb_instance.main.load_balancer.port,
+    scaleway_rdb_instance.main.load_balancer.hostname,
+    scaleway_rdb_instance.main.load_balancer.name,
     var.database_name
   )
   sensitive = true
