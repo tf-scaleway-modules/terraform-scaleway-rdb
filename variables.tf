@@ -22,14 +22,12 @@ variable "node_type" {
   type = string
 }
 
-variable "postgres_version" {
-  type = string
-}
-
 variable "cluster_mode" {
   type = string
 }
-
+variable "postgres_engine"{
+  type = string
+}
 variable "backups" {
   type = object({
     enabled        = bool
