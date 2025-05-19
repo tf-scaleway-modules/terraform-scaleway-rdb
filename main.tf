@@ -2,7 +2,7 @@ resource "scaleway_rdb_instance" "main" {
   name                      = var.name
   tags                      = [for k, v in var.tags : "${k}::${v}"]
   node_type                 = var.node_type
-  engine                    = var.postgres_version
+  engine                    = var.postgres_engine
   is_ha_cluster             = var.cluster_mode == "highly-available" ? true : false
   user_name                 = var.username
   password                  = var.password
