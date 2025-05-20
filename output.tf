@@ -6,7 +6,6 @@ output "pg_conn_str" {
     var.password,
     scaleway_rdb_instance.main.load_balancer[0].ip,
     scaleway_rdb_instance.main.load_balancer[0].port,
-    scaleway_rdb_instance.main.load_balancer[0].hostname,
     var.database_name
   )
   sensitive = true
