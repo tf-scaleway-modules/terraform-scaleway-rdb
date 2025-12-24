@@ -1,8 +1,1 @@
-# ==============================================================================
-# Outputs
-# ==============================================================================
-
-output "project_id" {
-  description = "The resolved project ID"
-  value       = module.dns.project_id
-}
+# Outputs are defined in main.tf for this complete example
