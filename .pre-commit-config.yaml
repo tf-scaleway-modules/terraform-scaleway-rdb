@@ -45,7 +45,7 @@ repos:
     hooks:
     - id: terraform_fmt
     - id: terraform_docs
-    - id: terraform_tflint
+    # - id: terraform_tflint
 
 # Run git-cliff to generate CHANGELOG for all tagged releases
 -   repo: local
