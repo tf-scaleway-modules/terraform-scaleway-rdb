@@ -1,9 +1,6 @@
 [settings]
 auto_install = true
 
-[env]
-PCT_TFPATH = "{{env.HOME}}/.local/share/mise/shims/tofu"
-
 [tools]
 pre-commit = '4.3'
 git-cliff = '2.11.0'
