@@ -12,10 +12,10 @@ variable "region" {
 }
 
 variable "username" {
-  type        = string
+  type = string
 }
 variable "password" {
-  type        = string
+  type = string
 }
 
 variable "node_type" {
@@ -25,7 +25,7 @@ variable "node_type" {
 variable "cluster_mode" {
   type = string
 }
-variable "postgres_engine"{
+variable "postgres_engine" {
   type = string
 }
 variable "backups" {
