@@ -98,7 +98,7 @@ variable "app_user_password" {
 variable "allowed_ip" {
   description = "IP address allowed to connect (CIDR notation, e.g., 203.0.113.50/32)"
   type        = string
-  default     = "0.0.0.0/0" # Change this in production!
+  # No default - must be explicitly provided for security
 }
 
 # ==============================================================================

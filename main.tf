@@ -60,6 +60,7 @@ resource "scaleway_rdb_instance" "this" {
   # Lifecycle rules
   lifecycle {
     # Prevent accidental destruction in production
+    # NOTE: Set to true manually for production - cannot be variable due to Terraform limitation
     prevent_destroy = false
 
     # Validate project configuration
@@ -77,7 +78,7 @@ resource "scaleway_rdb_instance" "this" {
       condition = var.volume_type == "lssd" || (
         var.volume_size_in_gb != null && var.volume_size_in_gb % 5 == 0
       )
-      error_message = "volume_size_in_gb must be set and be a multiple of 5 when using bssd, sbs_5k, or sbs_15k volume_type."
+      error_message = "volume_size_in_gb must be set and be a multiple of 5 when using sbs_5k or sbs_15k volume_type."
     }
 
     # Validate admin user configuration

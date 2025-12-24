@@ -174,18 +174,18 @@ variable "volume_type" {
 
     Available types:
     - lssd: Local SSD (fastest, default)
-    - bssd: Block SSD (scalable, requires volume_size_in_gb)
-    - sbs_5k: Block Storage with 5,000 IOPS
-    - sbs_15k: Block Storage with 15,000 IOPS
+    - sbs_5k: Block Storage with 5,000 IOPS (scalable, requires volume_size_in_gb)
+    - sbs_15k: Block Storage with 15,000 IOPS (scalable, requires volume_size_in_gb)
 
-    Note: bssd, sbs_5k, and sbs_15k require volume_size_in_gb to be set.
+    Note: sbs_5k and sbs_15k require volume_size_in_gb to be set.
+    Note: bssd is deprecated and no longer supported by Scaleway.
   EOT
   type        = string
   default     = "lssd"
 
   validation {
-    condition     = contains(["lssd", "bssd", "sbs_5k", "sbs_15k"], var.volume_type)
-    error_message = "Volume type must be one of: lssd, bssd, sbs_5k, sbs_15k."
+    condition     = contains(["lssd", "sbs_5k", "sbs_15k"], var.volume_type)
+    error_message = "Volume type must be one of: lssd, sbs_5k, sbs_15k. Note: bssd is deprecated."
   }
 }
 
@@ -756,11 +756,11 @@ variable "logs_policy" {
 
     Configuration:
     - max_age_retention: Days to retain logs (1-365)
-    - total_disk_retention: Maximum log size in MB
+    - total_disk_retention: Maximum log storage in bytes (minimum 100000000 = 100MB)
   EOT
   type = object({
     max_age_retention    = optional(number, 30)
-    total_disk_retention = optional(number, 100)
+    total_disk_retention = optional(number, 100000000)
   })
   default = null
 
@@ -770,5 +770,12 @@ variable "logs_policy" {
       var.logs_policy.max_age_retention <= 365
     )
     error_message = "max_age_retention must be between 1 and 365 days."
+  }
+
+  validation {
+    condition = var.logs_policy == null || (
+      var.logs_policy.total_disk_retention >= 100000000
+    )
+    error_message = "total_disk_retention must be at least 100000000 bytes (100MB)."
   }
 }

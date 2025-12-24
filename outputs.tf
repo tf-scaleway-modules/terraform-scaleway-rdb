@@ -28,13 +28,13 @@ output "instance_name" {
 }
 
 output "instance_endpoint_ip" {
-  description = "The IP address of the RDB instance endpoint."
-  value       = scaleway_rdb_instance.this.endpoint_ip
+  description = "The IP address of the RDB instance endpoint (deprecated, use connection_host instead)."
+  value       = try(scaleway_rdb_instance.this.load_balancer[0].ip, null)
 }
 
 output "instance_endpoint_port" {
-  description = "The port of the RDB instance endpoint."
-  value       = scaleway_rdb_instance.this.endpoint_port
+  description = "The port of the RDB instance endpoint (deprecated, use connection_port instead)."
+  value       = try(scaleway_rdb_instance.this.load_balancer[0].port, null)
 }
 
 output "instance_load_balancer" {
@@ -117,15 +117,15 @@ output "connection_string" {
       "postgres://%s:%s@%s:%d/%s?sslmode=require",
       var.admin_user_name,
       var.admin_user_password,
-      try(scaleway_rdb_instance.this.load_balancer[0].ip, scaleway_rdb_instance.this.endpoint_ip),
-      try(scaleway_rdb_instance.this.load_balancer[0].port, scaleway_rdb_instance.this.endpoint_port),
+      try(scaleway_rdb_instance.this.load_balancer[0].ip, ""),
+      try(scaleway_rdb_instance.this.load_balancer[0].port, 0),
       "postgres"
       ) : format(
       "mysql://%s:%s@%s:%d",
       var.admin_user_name,
       var.admin_user_password,
-      try(scaleway_rdb_instance.this.load_balancer[0].ip, scaleway_rdb_instance.this.endpoint_ip),
-      try(scaleway_rdb_instance.this.load_balancer[0].port, scaleway_rdb_instance.this.endpoint_port)
+      try(scaleway_rdb_instance.this.load_balancer[0].ip, ""),
+      try(scaleway_rdb_instance.this.load_balancer[0].port, 0)
     )
   ) : null
   sensitive = true
@@ -133,12 +133,12 @@ output "connection_string" {
 
 output "connection_host" {
   description = "The hostname or IP address for database connections."
-  value       = try(scaleway_rdb_instance.this.load_balancer[0].ip, scaleway_rdb_instance.this.endpoint_ip)
+  value       = try(scaleway_rdb_instance.this.load_balancer[0].ip, null)
 }
 
 output "connection_port" {
   description = "The port for database connections."
-  value       = try(scaleway_rdb_instance.this.load_balancer[0].port, scaleway_rdb_instance.this.endpoint_port)
+  value       = try(scaleway_rdb_instance.this.load_balancer[0].port, null)
 }
 
 # ==============================================================================
