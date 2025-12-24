@@ -67,6 +67,16 @@ output "instance_engine" {
   value       = scaleway_rdb_instance.this.engine
 }
 
+output "engine_type" {
+  description = "The detected engine type (postgresql or mysql)."
+  value       = local.is_postgresql ? "postgresql" : local.is_mysql ? "mysql" : "unknown"
+}
+
+output "engine_default_port" {
+  description = "The default port for the database engine (5432 for PostgreSQL, 3306 for MySQL)."
+  value       = local.default_port
+}
+
 output "instance_is_ha_cluster" {
   description = "Whether the instance is a high availability cluster."
   value       = scaleway_rdb_instance.this.is_ha_cluster

@@ -282,6 +282,8 @@ No modules.
 | <a name="output_database_ids"></a> [database\_ids](#output\_database\_ids) | Map of database keys to their IDs. |
 | <a name="output_databases"></a> [databases](#output\_databases) | Map of database keys to their full details. |
 | <a name="output_encryption_at_rest_enabled"></a> [encryption\_at\_rest\_enabled](#output\_encryption\_at\_rest\_enabled) | Whether encryption at rest is enabled. |
+| <a name="output_engine_default_port"></a> [engine\_default\_port](#output\_engine\_default\_port) | The default port for the database engine (5432 for PostgreSQL, 3306 for MySQL). |
+| <a name="output_engine_type"></a> [engine\_type](#output\_engine\_type) | The detected engine type (postgresql or mysql). |
 | <a name="output_instance_certificate"></a> [instance\_certificate](#output\_instance\_certificate) | The PEM-encoded TLS certificate for secure connections. |
 | <a name="output_instance_endpoint_ip"></a> [instance\_endpoint\_ip](#output\_instance\_endpoint\_ip) | The IP address of the RDB instance endpoint (deprecated, use connection\_host instead). |
 | <a name="output_instance_endpoint_port"></a> [instance\_endpoint\_port](#output\_instance\_endpoint\_port) | The port of the RDB instance endpoint (deprecated, use connection\_port instead). |
