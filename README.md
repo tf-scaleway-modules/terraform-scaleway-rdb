@@ -215,7 +215,7 @@ The module validates ACL rules to prevent accidental public exposure:
 
 | Name | Version |
 |------|---------|
-| <a name="provider_scaleway"></a> [scaleway](#provider\_scaleway) | 2.65.1 |
+| <a name="provider_scaleway"></a> [scaleway](#provider\_scaleway) | ~> 2.64 |
 
 ## Modules
 
