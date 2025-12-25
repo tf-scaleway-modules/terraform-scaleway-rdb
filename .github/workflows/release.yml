@@ -84,7 +84,7 @@ jobs:
           else
             echo "✅ CHANGELOG.md is up to date"
           fi
-        continue-on-error: true
+        continue-on-error: false
 
   # =============================================================================
   # CREATE RELEASE - Generate release with changelog
