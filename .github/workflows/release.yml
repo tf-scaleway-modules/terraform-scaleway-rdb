@@ -8,9 +8,6 @@ on:
 permissions:
   contents: write
 
-env:
-  GIT_CLIFF_VERSION: "2.7.0"
-
 jobs:
   # =============================================================================
   # VALIDATION - Run validation checks on release tags
@@ -72,22 +69,22 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install git-cliff
-        run: |
-          curl -sSfL https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/git-cliff-${GIT_CLIFF_VERSION}-x86_64-unknown-linux-gnu.tar.gz \
-            | tar -xz -C /usr/local/bin --strip-components=1 git-cliff-${GIT_CLIFF_VERSION}/git-cliff
+      - name: Generate and verify CHANGELOG
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: .cliff.toml
+          args: --output CHANGELOG.generated.md
 
-      - name: Verify CHANGELOG is up to date
+      - name: Check CHANGELOG diff
         run: |
           echo "Verifying CHANGELOG.md is up to date..."
-          git-cliff --config .cliff.toml --output CHANGELOG.generated.md
           if ! diff -q CHANGELOG.md CHANGELOG.generated.md > /dev/null 2>&1; then
             echo "::warning::CHANGELOG.md may be outdated. Run 'git-cliff --output CHANGELOG.md' to update it"
             diff CHANGELOG.md CHANGELOG.generated.md || true
           else
             echo "✅ CHANGELOG.md is up to date"
           fi
-        continue-on-error: true  # Don't block release, just warn
+        continue-on-error: true
 
   # =============================================================================
   # CREATE RELEASE - Generate release with changelog
@@ -102,11 +99,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install git-cliff
-        run: |
-          curl -sSfL https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/git-cliff-${GIT_CLIFF_VERSION}-x86_64-unknown-linux-gnu.tar.gz \
-            | tar -xz -C /usr/local/bin --strip-components=1 git-cliff-${GIT_CLIFF_VERSION}/git-cliff
-
       - name: Extract version
         id: version
         run: |
@@ -115,10 +107,16 @@ jobs:
           echo "Creating release for version $VERSION"
 
       - name: Generate release notes
-        run: |
-          git-cliff --config .cliff.toml --latest --strip header > RELEASE_NOTES.md
-          echo "--- Release Notes ---"
-          cat RELEASE_NOTES.md
+        id: changelog
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: .cliff.toml
+          args: --latest --strip header
+        env:
+          OUTPUT: RELEASE_NOTES.md
+
+      - name: Show release notes
+        run: cat RELEASE_NOTES.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
