@@ -1,78 +1,128 @@
 # git-cliff configuration file
 # https://git-cliff.org/docs/configuration
+#
+# Usage:
+#   CHANGELOG:     git-cliff --output CHANGELOG.md
+#   Release notes: git-cliff --latest --strip header
+#   Unreleased:    git-cliff --unreleased --strip header
+#
+# Platform auto-detection:
+#   - GitLab CI: Uses CI_PROJECT_URL environment variable
+#   - GitHub Actions: Uses GITHUB_SERVER_URL + GITHUB_REPOSITORY
+#   - Local: Set REPO_URL env var or defaults to GitLab
+
+# =============================================================================
+# CHANGELOG CONFIGURATION
+# =============================================================================
 
 [changelog]
-# changelog header
 header = """
 # Changelog
 
-All notable changes to this project will be documented in this file.\n
-"""
-# template for the changelog body
-# https://keats.github.io/tera/docs/#introduction
-body = """
-{% if version %}\
-## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
-{% for commit in commits -%}
-- {{ commit.message }}
-{% endfor -%}
+All notable changes to this project will be documented in this file.
 
-{% endif %}\
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 """
-# remove the leading and trailing whitespace from the template
-trim = true
-# changelog footer
+
+body = """
+{#- Platform auto-detection via environment variables -#}
+{%- set gitlab_url = get_env(name="CI_PROJECT_URL", default="") -%}
+{%- set github_server = get_env(name="GITHUB_SERVER_URL", default="") -%}
+{%- set github_repo = get_env(name="GITHUB_REPOSITORY", default="") -%}
+{%- set manual_url = get_env(name="REPO_URL", default="") -%}
+
+{#- Determine remote URL and platform type -#}
+{%- set is_github = false -%}
+{%- if gitlab_url != "" -%}
+  {%- set repo_url = gitlab_url -%}
+{%- elif github_server != "" and github_repo != "" -%}
+  {%- set repo_url = github_server ~ "/" ~ github_repo -%}
+  {%- set is_github = true -%}
+{%- elif manual_url != "" -%}
+  {%- set repo_url = manual_url -%}
+  {%- if manual_url is containing("github.com") -%}
+    {%- set is_github = true -%}
+  {%- endif -%}
+{%- else -%}
+  {%- set repo_url = "https://gitlab.com/leminnov/terraform/modules/scaleway-rdb" -%}
+{%- endif -%}
+
+{% if version %}\
+## [{{ version | trim_start_matches(pat="v") }}]({% if is_github %}{{ repo_url }}/releases/tag/{{ version }}{% else %}{{ repo_url }}/-/releases/{{ version }}{% endif %}) - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}\
+## [Unreleased]
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+
+### {{ group | striptags | trim | upper_first }}
+{% for commit in commits %}
+{%- if commit.scope %}
+- **{{ commit.scope }}:** {{ commit.message | upper_first | split(pat="\n") | first | trim }}\
+{%- if commit.breaking %} (**BREAKING**){% endif %}\
+{%- if commit.id %} ([{{ commit.id | truncate(length=8, end="") }}]({% if is_github %}{{ repo_url }}/commit/{{ commit.id }}{% else %}{{ repo_url }}/-/commit/{{ commit.id }}{% endif %})){% endif %}
+{%- else %}
+- {{ commit.message | upper_first | split(pat="\n") | first | trim }}\
+{%- if commit.breaking %} (**BREAKING**){% endif %}\
+{%- if commit.id %} ([{{ commit.id | truncate(length=8, end="") }}]({% if is_github %}{{ repo_url }}/commit/{{ commit.id }}{% else %}{{ repo_url }}/-/commit/{{ commit.id }}{% endif %})){% endif %}
+{%- endif %}
+{%- endfor %}
+{% endfor %}
+"""
+
 footer = ""
+trim = true
+
+# =============================================================================
+# GIT CONFIGURATION
+# =============================================================================
 
 [git]
-# parse the commits based on https://www.conventionalcommits.org
-conventional_commits = false
-# filter out the commits that are not conventional
+conventional_commits = true
 filter_unconventional = false
-# process each line of a commit as an individual commit
 split_commits = false
-# regex for preprocessing the commit messages
-commit_preprocessors = []
-# filter out the commits that are not matched by commit parsers
+protect_breaking_commits = false
 filter_commits = false
-# sort the tags topologically
 topo_order = false
-# sort the commits inside sections by oldest/newest order
 sort_commits = "newest"
-# limit the number of commits included in the changelog.
-# limit_commits = 42
 
-# Skip merge commits
-[[git.commit_parsers]]
-message = "^Merge.*"
-skip = true
+commit_preprocessors = [
+  { pattern = "\\s+$", replace = "" },
+  { pattern = "\\(#(\\d+)\\)$", replace = "" },
+]
 
-# Skip CHANGELOG related commits
-[[git.commit_parsers]]
-message = ".*CHANGELOG.*"
-skip = true
+# =============================================================================
+# COMMIT PARSERS - Order matters! First match wins.
+# =============================================================================
 
-# Skip changelog related commits
-[[git.commit_parsers]]
-message = ".*[Cc]hangelog.*"
-skip = true
+commit_parsers = [
+  # Skip patterns
+  { message = "^Merge.*", skip = true },
+  { message = ".*\\[skip ci\\].*", skip = true },
+  { message = ".*\\[ci skip\\].*", skip = true },
+  { message = "^chore\\(release\\).*", skip = true },
+  { message = "^chore: release.*", skip = true },
+  { body = ".*skip-changelog.*", skip = true },
 
-# Skip chglog related commits
-[[git.commit_parsers]]
-message = ".*chglog.*"
-skip = true
+  # Breaking changes (highest priority)
+  { message = "^.*!:.*", group = "⚠️ Breaking Changes" },
+  { message = "^.*\\(.*\\)!:.*", group = "⚠️ Breaking Changes" },
 
-# Skip CI skip commits
-[[git.commit_parsers]]
-message = ".*\\[skip ci\\].*"
-skip = true
+  # Conventional commit types
+  { message = "^feat", group = "🚀 Features" },
+  { message = "^fix", group = "🐛 Bug Fixes" },
+  { message = "^docs", group = "📚 Documentation" },
+  { message = "^perf", group = "⚡ Performance" },
+  { message = "^refactor", group = "🔨 Refactoring" },
+  { message = "^style", group = "🎨 Styling" },
+  { message = "^test", group = "🧪 Testing" },
+  { message = "^build", group = "📦 Build System" },
+  { message = "^ci", group = "👷 CI/CD" },
+  { message = "^chore\\(deps\\)", group = "📌 Dependencies" },
+  { message = "^chore", group = "🔧 Miscellaneous" },
+  { message = "^revert", group = "⏪ Reverted" },
+  { message = "^security", group = "🔒 Security" },
 
-# Skip CI skip commits (alternative format)
-[[git.commit_parsers]]
-message = ".*\\[ci skip\\].*"
-skip = true
-
-# Skip "Updated CHANGELOG" commits
-[[git.commit_parsers]]
-message = "^Updated CHANGELOG.*"
-skip = true
+  # Catch-all for non-conventional commits
+  { message = ".*", group = "📝 Other" },
+]
