@@ -48,11 +48,9 @@ body = """
   {%- set repo_url = "https://gitlab.com/leminnov/terraform/modules/scaleway-rdb" -%}
 {%- endif -%}
 
+{#- Only show tagged versions, skip unreleased completely -#}
 {% if version %}\
 ## [{{ version | trim_start_matches(pat="v") }}]({% if is_github %}{{ repo_url }}/releases/tag/{{ version }}{% else %}{{ repo_url }}/-/releases/{{ version }}{% endif %}) - {{ timestamp | date(format="%Y-%m-%d") }}
-{% else %}\
-## [Unreleased]
-{% endif %}\
 {% for group, commits in commits | group_by(attribute="group") %}
 
 ### {{ group | striptags | trim | upper_first }}
@@ -68,6 +66,7 @@ body = """
 {%- endif %}
 {%- endfor %}
 {% endfor %}
+{% endif %}
 """
 
 footer = ""
@@ -83,8 +82,11 @@ filter_unconventional = false
 split_commits = false
 protect_breaking_commits = false
 filter_commits = false
-topo_order = false
+# Use topological order to properly handle merge commits and branches
+topo_order = true
 sort_commits = "newest"
+# Only consider semantic version tags
+tag_pattern = "^v[0-9]+\\.[0-9]+\\.[0-9]+.*$"
 
 commit_preprocessors = [
   { pattern = "\\s+$", replace = "" },
