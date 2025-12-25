@@ -46,4 +46,3 @@ repos:
     - id: terraform_fmt
     - id: terraform_docs
     - id: terraform_tflint
-
