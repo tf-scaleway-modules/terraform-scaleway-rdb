@@ -263,6 +263,38 @@ variable "admin_user_password" {
   }
 }
 
+variable "admin_user_password_wo" {
+  description = <<-EOT
+    Write-only alternative to admin_user_password: never stored in the
+    Terraform state (requires OpenTofu/Terraform >= 1.11). Not exposed by
+    the admin_password and connection_string outputs.
+
+    Same requirements as admin_user_password. Bump
+    admin_user_password_wo_version to apply a new value.
+  EOT
+  type        = string
+  default     = null
+  sensitive   = true
+
+  validation {
+    condition = var.admin_user_password_wo == null || (
+      length(var.admin_user_password_wo) >= 8 &&
+      length(var.admin_user_password_wo) <= 128 &&
+      can(regex("[A-Z]", var.admin_user_password_wo)) &&
+      can(regex("[a-z]", var.admin_user_password_wo)) &&
+      can(regex("[0-9]", var.admin_user_password_wo)) &&
+      can(regex("[!@#$%^&*()_+\\-=\\[\\]{}|;:,.<>?]", var.admin_user_password_wo))
+    )
+    error_message = "Password must be 8-128 characters with at least one uppercase, lowercase, digit, and special character."
+  }
+}
+
+variable "admin_user_password_wo_version" {
+  description = "Version of admin_user_password_wo. Change it to apply a new write-only password."
+  type        = number
+  default     = null
+}
+
 # ==============================================================================
 # Security Configuration
 # ==============================================================================
@@ -496,6 +528,9 @@ variable "users" {
     addressing. Users are created on the RDB instance and can be granted
     privileges on specific databases.
 
+    Set exactly one of password or password_wo. password_wo is write-only
+    (never stored in state); bump password_wo_version to change it.
+
     Password requirements:
     - 8 to 128 characters
     - At least one uppercase letter
@@ -518,9 +553,11 @@ variable "users" {
     }
   EOT
   type = map(object({
-    name     = string
-    password = string
-    is_admin = optional(bool, false)
+    name                = string
+    password            = optional(string)
+    password_wo         = optional(string) # write-only: never stored in state (OpenTofu/Terraform >= 1.11)
+    password_wo_version = optional(number) # bump to apply a new password_wo
+    is_admin            = optional(bool, false)
   }))
   default = {}
 
@@ -532,15 +569,22 @@ variable "users" {
   }
 
   validation {
-    condition = alltrue([
-      for k, v in var.users :
-      length(v.password) >= 8 &&
-      length(v.password) <= 128 &&
-      can(regex("[A-Z]", v.password)) &&
-      can(regex("[a-z]", v.password)) &&
-      can(regex("[0-9]", v.password)) &&
-      can(regex("[!@#$%^&*()_+\\-=\\[\\]{}|;:,.<>?]", v.password))
-    ])
+    condition     = alltrue([for k, v in var.users : (v.password == null) != (v.password_wo == null)])
+    error_message = "Each user must set exactly one of password or password_wo."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for k, v in var.users : [
+        for p in compact([v.password, v.password_wo]) :
+        length(p) >= 8 &&
+        length(p) <= 128 &&
+        can(regex("[A-Z]", p)) &&
+        can(regex("[a-z]", p)) &&
+        can(regex("[0-9]", p)) &&
+        can(regex("[!@#$%^&*()_+\\-=\\[\\]{}|;:,.<>?]", p))
+      ]
+    ]))
     error_message = "User passwords must be 8-128 characters with at least one uppercase, lowercase, digit, and special character."
   }
 }

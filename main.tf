@@ -15,8 +15,10 @@ resource "scaleway_rdb_instance" "this" {
   is_ha_cluster = var.is_ha_cluster
 
   # Admin user (optional - created with instance)
-  user_name = var.admin_user_name
-  password  = var.admin_user_password
+  user_name           = var.admin_user_name
+  password            = var.admin_user_password
+  password_wo         = var.admin_user_password_wo
+  password_wo_version = var.admin_user_password_wo_version
 
   # Storage configuration
   volume_type       = var.volume_type
@@ -83,10 +85,10 @@ resource "scaleway_rdb_instance" "this" {
 
     # Validate admin user configuration
     precondition {
-      condition = (var.admin_user_name == null && var.admin_user_password == null) || (
-        var.admin_user_name != null && var.admin_user_password != null
-      )
-      error_message = "Both admin_user_name and admin_user_password must be set together, or neither."
+      condition = var.admin_user_name == null ? (
+        var.admin_user_password == null && var.admin_user_password_wo == null
+      ) : (var.admin_user_password == null) != (var.admin_user_password_wo == null)
+      error_message = "admin_user_name must be set together with exactly one of admin_user_password or admin_user_password_wo, or none of them."
     }
 
     # Validate ACL security - prevent public access unless explicitly allowed
@@ -128,11 +130,13 @@ resource "scaleway_rdb_database" "this" {
 resource "scaleway_rdb_user" "this" {
   for_each = var.users
 
-  instance_id = scaleway_rdb_instance.this.id
-  name        = each.value.name
-  password    = each.value.password
-  is_admin    = each.value.is_admin
-  region      = var.region
+  instance_id         = scaleway_rdb_instance.this.id
+  name                = each.value.name
+  password            = each.value.password
+  password_wo         = each.value.password_wo
+  password_wo_version = each.value.password_wo_version
+  is_admin            = each.value.is_admin
+  region              = var.region
 }
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
