@@ -19,9 +19,9 @@ A **production-ready** Terraform/OpenTofu module for managing Scaleway Relationa
 
 ### Prerequisites
 
-- Terraform >= 1.10.7 or OpenTofu >= 1.10.7
+- Terraform >= 1.11 or OpenTofu >= 1.11
 - Scaleway account with API credentials configured
-- Scaleway provider >= 2.64
+- Scaleway provider >= 2.86
 
 ### Basic Usage
 
@@ -179,6 +179,7 @@ The module validates ACL rules to prevent accidental public exposure:
 - All password variables are marked as `sensitive`
 - Connection strings and certificates are marked as `sensitive` in outputs
 - User passwords are never exposed in outputs
+- Write-only passwords (`admin_user_password_wo`, `users[*].password_wo`) are never stored in the state (OpenTofu/Terraform >= 1.11); bump the matching `*_wo_version` to rotate them
 
 ## Supported Resources
 
@@ -208,14 +209,14 @@ The module validates ACL rules to prevent accidental public exposure:
 
 | Name | Version |
 |------|---------|
-| <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.10.7 |
-| <a name="requirement_scaleway"></a> [scaleway](#requirement\_scaleway) | ~> 2.64 |
+| <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.11.0 |
+| <a name="requirement_scaleway"></a> [scaleway](#requirement\_scaleway) | ~> 2.86 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_scaleway"></a> [scaleway](#provider\_scaleway) | ~> 2.64 |
+| <a name="provider_scaleway"></a> [scaleway](#provider\_scaleway) | ~> 2.86 |
 
 ## Modules
 
@@ -241,6 +242,8 @@ No modules.
 | <a name="input_acl_rules"></a> [acl\_rules](#input\_acl\_rules) | Map of ACL rules to control network access to the RDB instance.<br/><br/>ACL rules define which IP addresses or CIDR ranges can connect<br/>to the database. By default, Scaleway allows all IPs (0.0.0.0/0).<br/>This module requires explicit ACL rules for security.<br/><br/>SECURITY: Do not use 0.0.0.0/0 in production unless absolutely<br/>necessary. Use specific IP ranges or private networks instead.<br/><br/>Example:<br/>{<br/>  office = {<br/>    ip          = "203.0.113.0/24"<br/>    description = "Office network"<br/>  }<br/>  vpn = {<br/>    ip          = "10.0.0.0/8"<br/>    description = "VPN network"<br/>  }<br/>} | <pre>map(object({<br/>    ip          = string<br/>    description = string<br/>  }))</pre> | `{}` | no |
 | <a name="input_admin_user_name"></a> [admin\_user\_name](#input\_admin\_user\_name) | Username for the initial admin user created with the instance.<br/><br/>This user has full administrative privileges on the instance.<br/>Leave null to skip creating an initial admin user.<br/><br/>Naming rules:<br/>- Must start with a letter<br/>- Can contain letters, numbers, and underscores<br/>- Must be 1-63 characters long | `string` | `null` | no |
 | <a name="input_admin_user_password"></a> [admin\_user\_password](#input\_admin\_user\_password) | Password for the initial admin user.<br/><br/>Required if admin\_user\_name is set.<br/><br/>Password requirements:<br/>- 8 to 128 characters<br/>- At least one uppercase letter<br/>- At least one lowercase letter<br/>- At least one digit<br/>- At least one special character (!@#$%^&*()\_+-=[]{}\|;:,.<>?) | `string` | `null` | no |
+| <a name="input_admin_user_password_wo"></a> [admin\_user\_password\_wo](#input\_admin\_user\_password\_wo) | Write-only alternative to admin\_user\_password: never stored in the<br/>Terraform state (requires OpenTofu/Terraform >= 1.11). Not exposed by<br/>the admin\_password and connection\_string outputs.<br/><br/>Same requirements as admin\_user\_password. Bump<br/>admin\_user\_password\_wo\_version to apply a new value. | `string` | `null` | no |
+| <a name="input_admin_user_password_wo_version"></a> [admin\_user\_password\_wo\_version](#input\_admin\_user\_password\_wo\_version) | Version of admin\_user\_password\_wo. Change it to apply a new write-only password. | `number` | `null` | no |
 | <a name="input_allow_public_access"></a> [allow\_public\_access](#input\_allow\_public\_access) | Allow unrestricted public access (0.0.0.0/0) in ACL rules.<br/><br/>This is a safety flag to prevent accidental exposure of the database<br/>to the public internet. Set to true only if you understand the<br/>security implications.<br/><br/>WARNING: Enabling public access exposes your database to the internet.<br/>Consider using private networks or specific IP allowlists instead.<br/><br/>Default: false | `bool` | `false` | no |
 | <a name="input_backup_enabled"></a> [backup\_enabled](#input\_backup\_enabled) | Enable automated backups.<br/><br/>When enabled, automatic backups are created according to the<br/>backup\_schedule\_frequency setting.<br/><br/>Default: true (strongly recommended for production) | `bool` | `true` | no |
 | <a name="input_backup_same_region"></a> [backup\_same\_region](#input\_backup\_same\_region) | Store backups in the same region as the instance.<br/><br/>When false (default), backups are stored in a different region<br/>for geographic redundancy and disaster recovery.<br/><br/>Default: false (recommended for production) | `bool` | `false` | no |
@@ -264,7 +267,7 @@ No modules.
 | <a name="input_region"></a> [region](#input\_region) | Scaleway region where the RDB instance will be deployed.<br/><br/>Available regions:<br/>- fr-par: Paris, France<br/>- nl-ams: Amsterdam, Netherlands<br/>- pl-waw: Warsaw, Poland<br/><br/>If not specified, uses the provider's default region. | `string` | `null` | no |
 | <a name="input_settings"></a> [settings](#input\_settings) | Database engine configuration settings.<br/><br/>These settings configure the database engine behavior.<br/>Available settings depend on the engine type.<br/><br/>Example for PostgreSQL:<br/>{<br/>  "max\_connections"       = "200"<br/>  "effective\_cache\_size"  = "1GB"<br/>}<br/><br/>Example for MySQL:<br/>{<br/>  "max\_connections" = "200"<br/>} | `map(string)` | `{}` | no |
 | <a name="input_tags"></a> [tags](#input\_tags) | Tags to apply to all resources.<br/><br/>Tags are key-value pairs used for resource organization and filtering.<br/>They are converted to Scaleway's tag format: "key=value".<br/><br/>Example:<br/>{<br/>  environment = "production"<br/>  team        = "platform"<br/>} | `map(string)` | `{}` | no |
-| <a name="input_users"></a> [users](#input\_users) | Map of database users to create.<br/><br/>Each user is identified by a unique key used for Terraform resource<br/>addressing. Users are created on the RDB instance and can be granted<br/>privileges on specific databases.<br/><br/>Password requirements:<br/>- 8 to 128 characters<br/>- At least one uppercase letter<br/>- At least one lowercase letter<br/>- At least one digit<br/>- At least one special character<br/><br/>Example:<br/>{<br/>  app\_user = {<br/>    name     = "app\_service"<br/>    password = "SecureP@ssw0rd!"<br/>    is\_admin = false<br/>  }<br/>  admin\_user = {<br/>    name     = "dba"<br/>    password = "AdminP@ssw0rd!"<br/>    is\_admin = true<br/>  }<br/>} | <pre>map(object({<br/>    name     = string<br/>    password = string<br/>    is_admin = optional(bool, false)<br/>  }))</pre> | `{}` | no |
+| <a name="input_users"></a> [users](#input\_users) | Map of database users to create.<br/><br/>Each user is identified by a unique key used for Terraform resource<br/>addressing. Users are created on the RDB instance and can be granted<br/>privileges on specific databases.<br/><br/>Set exactly one of password or password\_wo. password\_wo is write-only<br/>(never stored in state); bump password\_wo\_version to change it.<br/><br/>Password requirements:<br/>- 8 to 128 characters<br/>- At least one uppercase letter<br/>- At least one lowercase letter<br/>- At least one digit<br/>- At least one special character<br/><br/>Example:<br/>{<br/>  app\_user = {<br/>    name     = "app\_service"<br/>    password = "SecureP@ssw0rd!"<br/>    is\_admin = false<br/>  }<br/>  admin\_user = {<br/>    name     = "dba"<br/>    password = "AdminP@ssw0rd!"<br/>    is\_admin = true<br/>  }<br/>} | <pre>map(object({<br/>    name                = string<br/>    password            = optional(string)<br/>    password_wo         = optional(string) # write-only: never stored in state (OpenTofu/Terraform >= 1.11)<br/>    password_wo_version = optional(number) # bump to apply a new password_wo<br/>    is_admin            = optional(bool, false)<br/>  }))</pre> | `{}` | no |
 | <a name="input_volume_size_in_gb"></a> [volume\_size\_in\_gb](#input\_volume\_size\_in\_gb) | Size of the storage volume in gigabytes.<br/><br/>Required for bssd, sbs\_5k, and sbs\_15k volume types.<br/>Must be a multiple of 5 for block storage types.<br/><br/>Minimum: 5 GB<br/>Maximum: Varies by node type | `number` | `null` | no |
 | <a name="input_volume_type"></a> [volume\_type](#input\_volume\_type) | Type of storage volume for the database.<br/><br/>Available types:<br/>- lssd: Local SSD (fastest, default)<br/>- sbs\_5k: Block Storage with 5,000 IOPS (scalable, requires volume\_size\_in\_gb)<br/>- sbs\_15k: Block Storage with 15,000 IOPS (scalable, requires volume\_size\_in\_gb)<br/><br/>Note: sbs\_5k and sbs\_15k require volume\_size\_in\_gb to be set.<br/>Note: bssd is deprecated and no longer supported by Scaleway. | `string` | `"lssd"` | no |
 
@@ -278,7 +281,7 @@ No modules.
 | <a name="output_backup_enabled"></a> [backup\_enabled](#output\_backup\_enabled) | Whether automated backups are enabled. |
 | <a name="output_connection_host"></a> [connection\_host](#output\_connection\_host) | The hostname or IP address for database connections. |
 | <a name="output_connection_port"></a> [connection\_port](#output\_connection\_port) | The port for database connections. |
-| <a name="output_connection_string"></a> [connection\_string](#output\_connection\_string) | Database connection string.<br/><br/>For PostgreSQL: postgres://user:password@host:port/database?sslmode=require<br/>For MySQL: mysql://user:password@host:port/database<br/><br/>Note: This output requires admin\_user\_name to be set. |
+| <a name="output_connection_string"></a> [connection\_string](#output\_connection\_string) | Database connection string.<br/><br/>For PostgreSQL: postgres://user:password@host:port/database?sslmode=require<br/>For MySQL: mysql://user:password@host:port/database<br/><br/>Note: This output requires admin\_user\_name and admin\_user\_password<br/>(null when using admin\_user\_password\_wo). |
 | <a name="output_database_ids"></a> [database\_ids](#output\_database\_ids) | Map of database keys to their IDs. |
 | <a name="output_databases"></a> [databases](#output\_databases) | Map of database keys to their full details. |
 | <a name="output_encryption_at_rest_enabled"></a> [encryption\_at\_rest\_enabled](#output\_encryption\_at\_rest\_enabled) | Whether encryption at rest is enabled. |
@@ -345,7 +348,7 @@ This module is provided "as is" without warranty. Always test in non-production 
 
 [apache]: https://opensource.org/licenses/Apache-2.0
 [apache-shield]: https://img.shields.io/badge/License-Apache%202.0-blue.svg
-[terraform-badge]: https://img.shields.io/badge/Terraform-%3E%3D1.10-623CE4
+[terraform-badge]: https://img.shields.io/badge/Terraform-%3E%3D1.11-623CE4
 [terraform-url]: https://www.terraform.io
-[scaleway-badge]: https://img.shields.io/badge/Scaleway%20Provider-%3E%3D2.64-4f0599
+[scaleway-badge]: https://img.shields.io/badge/Scaleway%20Provider-%3E%3D2.86-4f0599
 [scaleway-url]: https://registry.terraform.io/providers/scaleway/scaleway/

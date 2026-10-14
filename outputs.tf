@@ -120,9 +120,10 @@ output "connection_string" {
     For PostgreSQL: postgres://user:password@host:port/database?sslmode=require
     For MySQL: mysql://user:password@host:port/database
 
-    Note: This output requires admin_user_name to be set.
+    Note: This output requires admin_user_name and admin_user_password
+    (null when using admin_user_password_wo).
   EOT
-  value = var.admin_user_name != null ? (
+  value = var.admin_user_name != null && var.admin_user_password != null ? (
     local.is_postgresql ? format(
       "postgres://%s:%s@%s:%d/%s?sslmode=require",
       var.admin_user_name,
