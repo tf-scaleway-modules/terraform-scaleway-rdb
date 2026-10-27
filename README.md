@@ -321,17 +321,23 @@ mise install
 
 # Install pre-commit hooks
 pre-commit install --install-hooks
+
+# Register the OpenSpec standards stores (once per machine)
+mise run spec-setup
 ```
+
+Changes are planned with [OpenSpec](https://github.com/Fission-AI/OpenSpec): `openspec/specs/` is the module's current contract and [AGENTS.md](AGENTS.md) routes to the engineering standards. Behaviour changes, new inputs, outputs or resources go through a change proposal (`/openspec-propose`) before any code.
 
 ### Development Workflow
 
 1. Fork the repository
 2. Create a feature branch
-3. Make your changes
+3. Make your changes (behaviour changes start with a change proposal, see above)
 4. Run validation:
    ```bash
    tofu fmt -recursive
    tofu validate
+   mise run spec-validate
    ```
 5. Pre-commit hooks will automatically run on commit
 6. Submit a merge request
