@@ -35,10 +35,10 @@ variable "project_name" {
 }
 
 variable "admin_password" {
-  description = "Password for the admin user"
+  description = "Password for the admin user (set TF_VAR_admin_password; never stored in state or plan)"
   type        = string
   sensitive   = true
-  default     = "fs652Af@d$s"
+  ephemeral   = true
 }
 
 variable "app_password" {
@@ -85,8 +85,9 @@ module "production_database" {
   volume_size_in_gb = 100
 
   # Admin user
-  admin_user_name     = "admin"
-  admin_user_password = var.admin_password
+  admin_user_name                = "admin"
+  admin_user_password_wo         = var.admin_password
+  admin_user_password_wo_version = 1
 
   # Security
   encryption_at_rest = true

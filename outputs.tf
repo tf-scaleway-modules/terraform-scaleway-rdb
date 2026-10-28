@@ -100,8 +100,9 @@ output "admin_password" {
   description = <<-EOT
     The admin user password.
 
-    Returns the provided password if admin_user_password was set,
-    or the auto-generated password from the instance if not.
+    Returns admin_user_password if it was set, otherwise the password
+    attribute of the instance. It is null when admin_user_password_wo is
+    used (write-only values are never stored) or no admin user is set.
 
     WARNING: This is sensitive data - handle with care.
   EOT

@@ -11,10 +11,7 @@ locals {
   # Priority: project_id > data source lookup > null (provider default)
   # ==============================================================================
 
-  project_id = coalesce(
-    var.project_id,
-    try(data.scaleway_account_project.this[0].id, null)
-  )
+  project_id = var.project_id != null ? var.project_id : one(data.scaleway_account_project.this[*].id)
 
   # ==============================================================================
   # Tags Transformation
