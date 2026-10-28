@@ -17,7 +17,7 @@ When `private_network` is not null the instance SHALL have one `private_network`
 - **THEN** the instance has no `private_network` block
 
 ### Requirement: Private network address validation
-`private_network.ip_net`, when set, SHALL be valid CIDR notation, and `ip_net` and `enable_ipam = true` SHALL NOT be set together.
+`private_network.ip_net`, when set, SHALL be valid CIDR notation, `ip_net` and `enable_ipam = true` SHALL NOT be set together, and one of them (`ip_net` or `enable_ipam = true`) MUST be set.
 
 #### Scenario: Invalid CIDR
 - **WHEN** `private_network = { pn_id = "<id>", ip_net = "192.168.1.10" }`
@@ -26,6 +26,10 @@ When `private_network` is not null the instance SHALL have one `private_network`
 #### Scenario: Static address and IPAM together
 - **WHEN** `private_network = { pn_id = "<id>", ip_net = "192.168.1.10/24", enable_ipam = true }`
 - **THEN** the plan is rejected with "Cannot set both ip_net and enable_ipam. Use one or the other."
+
+#### Scenario: Neither address mode
+- **WHEN** `private_network = { pn_id = "<id>" }`
+- **THEN** the plan is rejected with "Set either ip_net or enable_ipam = true."
 
 ### Requirement: ACL rules
 The module SHALL create one `scaleway_rdb_acl` on the instance when `acl_rules` (`map(object({ ip = string, description = string }))`, default `{}`) has at least one entry, with one `acl_rules` block per entry; when empty, no ACL resource is created.
@@ -66,3 +70,18 @@ A rule whose `ip` is exactly `0.0.0.0/0` SHALL be rejected at plan time unless `
 #### Scenario: ACL present
 - **WHEN** at least one ACL rule is configured
 - **THEN** `acl_id` is the ACL ID and `acl_rules` lists the applied rules
+
+### Requirement: Wide ACL range warning
+A `check` named `acl_wide_ranges` SHALL warn at plan time when `allow_public_access` is `false` and an `acl_rules[*].ip` has a prefix shorter than 8. The literal `0.0.0.0/0` is not reported by the check: the public access guard rejects it. The plan still succeeds for the warned ranges.
+
+#### Scenario: Half of the internet
+- **WHEN** `acl_rules` contains `ip = "0.0.0.0/1"` and `allow_public_access` is `false`
+- **THEN** the plan succeeds with a warning from `check.acl_wide_ranges`
+
+#### Scenario: Wide range acknowledged
+- **WHEN** `acl_rules` contains `ip = "0.0.0.0/1"` and `allow_public_access = true`
+- **THEN** no warning is emitted
+
+#### Scenario: Private range
+- **WHEN** `acl_rules` contains only `ip = "10.0.0.0/8"`
+- **THEN** no warning is emitted

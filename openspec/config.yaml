@@ -42,10 +42,9 @@ context: |
   "key=value" and builds the engine helpers and output maps; versions.tf pins
   OpenTofu/Terraform and the provider; variables.tf is the whole input contract (grouped by theme, with
   validation blocks); outputs.tf exposes the instance, its endpoints and the
-  created objects. There is no checks.tf: plan-time guards are preconditions on
-  scaleway_rdb_instance.this. There is no tests/ directory yet (no unit
-  tests); new behaviour adds tests/main.tftest.hcl. examples/minimal and
-  examples/complete are the usage examples.
+  created objects. checks.tf holds the plan-time check warnings; other guards are preconditions
+  on scaleway_rdb_instance.this. Unit tests live in tests/main.tftest.hcl (mock
+  provider). examples/minimal and examples/complete are the usage examples.
 
   Module-specific conventions (the generic ones are standards in the
   quality, repository and terraform stores, fetched on demand): the admin and
@@ -61,7 +60,7 @@ context: |
   line and the release version follows semver.
 
   Commands: tofu fmt -recursive; tofu init -backend=false && tofu validate;
-  tflint --recursive; tofu test (once tests/ exists); pre-commit run -a;
+  tflint --recursive; tofu test (unit tests in tests/main.tftest.hcl, mock provider, no account); pre-commit run -a;
   mise run changelog; mise run spec-validate.
 
   Standards: fetch the referenced-store specs listed in these instructions
@@ -79,7 +78,7 @@ rules:
     - Explain how the change avoids a perpetual diff and how existing state migrates (moved blocks, in-place update or forced replacement)
     - Keep provider {} and backend {} out of the module and never shell out to a CLI
   tasks:
-    - Include unit tests in tests/main.tftest.hcl (the directory does not exist yet, create it), and examples/complete plus any example the change affects
+    - Include unit tests in tests/main.tftest.hcl (a rejected-input run per new validation, a run per check), and examples/complete plus any example the change affects
     - Include tofu fmt -recursive, tofu validate, tflint --recursive, tofu test and pre-commit run -a (terraform-docs README regeneration)
     - Include a commit subject that reads as the CHANGELOG.md line (git-cliff generates the file; regenerate it with mise run changelog at release), with upgrade notes in the commit body for anything breaking, and README updates when the compatibility matrix or the what-lands-in-state description changes
     - Reuse the existing capability directories under openspec/specs (module-contract, instances, databases-and-users, network-access, backups, read-replicas) instead of creating overlapping ones

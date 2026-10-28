@@ -36,7 +36,7 @@ The checkable form of each line is the `quality` store (`quality-simplicity`,
   `users[*].password_wo`, with `*_wo_version`); exactly one form is set per user.
 - Plan-time guards are `precondition` blocks on `scaleway_rdb_instance.this`;
   `0.0.0.0/0` in `acl_rules` needs `allow_public_access = true`.
-- `tests/` does not exist yet: new behaviour adds `tests/main.tftest.hcl`.
+- New behaviour extends `tests/main.tftest.hcl`; warnings live in `checks.tf`.
 
 ## Standards lookup
 Engineering standards are OpenSpec specs in the stores listed under `references:`
@@ -76,7 +76,7 @@ in your summary.
 
 ## Commands
 - Format / validate: `tofu fmt -recursive`, `tofu init -backend=false && tofu validate`, `tflint --recursive`
-- Tests: `tofu test` (unit, no server; needs `tests/main.tftest.hcl`)
+- Tests: `tofu test` (unit tests in `tests/main.tftest.hcl`, mock provider, no server)
 - Everything incl. README regeneration: `pre-commit run -a`
 - Changelog: `mise run changelog` (git-cliff, from commit subjects)
 - Specs: `mise run spec-validate`; standards stores: `mise run spec-setup`
