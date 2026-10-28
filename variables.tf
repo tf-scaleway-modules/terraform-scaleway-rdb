@@ -193,7 +193,7 @@ variable "volume_size_in_gb" {
   description = <<-EOT
     Size of the storage volume in gigabytes.
 
-    Required for bssd, sbs_5k, and sbs_15k volume types.
+    Required for sbs_5k and sbs_15k volume types.
     Must be a multiple of 5 for block storage types.
 
     Minimum: 5 GB
@@ -266,8 +266,8 @@ variable "admin_user_password" {
 variable "admin_user_password_wo" {
   description = <<-EOT
     Write-only alternative to admin_user_password: never stored in the
-    Terraform state (requires OpenTofu/Terraform >= 1.11). Not exposed by
-    the admin_password and connection_string outputs.
+    Terraform state or the plan file (requires OpenTofu/Terraform >= 1.11).
+    Not exposed by the admin_password and connection_string outputs.
 
     Same requirements as admin_user_password. Bump
     admin_user_password_wo_version to apply a new value.
@@ -275,6 +275,7 @@ variable "admin_user_password_wo" {
   type        = string
   default     = null
   sensitive   = true
+  ephemeral   = true
 
   validation {
     condition = var.admin_user_password_wo == null || (
@@ -436,7 +437,8 @@ variable "private_network" {
     - ip_net: Static IP address with CIDR notation (e.g., "192.168.1.10/24")
     - enable_ipam: Use Scaleway IPAM for automatic IP assignment
 
-    Either ip_net or enable_ipam should be set, not both.
+    Set exactly one of ip_net or enable_ipam = true: both together and
+    neither are rejected (the provider fails at apply without one).
   EOT
   type = object({
     pn_id       = string
@@ -459,6 +461,13 @@ variable "private_network" {
     )
     error_message = "Cannot set both ip_net and enable_ipam. Use one or the other."
   }
+
+  validation {
+    condition = var.private_network == null || (
+      var.private_network.ip_net != null || var.private_network.enable_ipam == true
+    )
+    error_message = "Set either ip_net or enable_ipam = true."
+  }
 }
 
 # ==============================================================================
@@ -467,7 +476,7 @@ variable "private_network" {
 
 variable "tags" {
   description = <<-EOT
-    Tags to apply to all resources.
+    Tags to apply to the RDB instance (the other resources do not take tags).
 
     Tags are key-value pairs used for resource organization and filtering.
     They are converted to Scaleway's tag format: "key=value".
@@ -530,6 +539,8 @@ variable "users" {
 
     Set exactly one of password or password_wo. password_wo is write-only
     (never stored in state); bump password_wo_version to change it.
+    Unlike admin_user_password_wo it cannot be ephemeral, because this map
+    is iterated with for_each: its value stays in the plan file.
 
     Password requirements:
     - 8 to 128 characters
@@ -598,8 +609,9 @@ variable "privileges" {
     Map of user privileges to grant on databases.
 
     Each privilege grants a specific user access to a specific database.
-    Both the user and database must be created (either via this module
-    or the admin user).
+    Both the user and database must exist (created via this module, as the
+    admin user, or outside the module). The names are not cross-checked
+    against users and databases: a wrong name fails at apply.
 
     Permission levels:
     - none: No access
@@ -650,6 +662,9 @@ variable "acl_rules" {
 
     SECURITY: Do not use 0.0.0.0/0 in production unless absolutely
     necessary. Use specific IP ranges or private networks instead.
+    0.0.0.0/0 is rejected unless allow_public_access is true; other very
+    wide ranges (prefix shorter than /8, such as 0.0.0.0/1) only raise a
+    plan-time warning. The Scaleway API does not support IPv6 ACL rules.
 
     Example:
     {
@@ -679,7 +694,8 @@ variable "acl_rules" {
 
 variable "allow_public_access" {
   description = <<-EOT
-    Allow unrestricted public access (0.0.0.0/0) in ACL rules.
+    Allow unrestricted public access (0.0.0.0/0) in ACL rules and silence
+    the warning about other very wide ranges.
 
     This is a safety flag to prevent accidental exposure of the database
     to the public internet. Set to true only if you understand the
@@ -749,6 +765,22 @@ variable "read_replicas" {
     ])
     error_message = "Read replica region must be one of: fr-par, nl-ams, pl-waw."
   }
+
+  validation {
+    condition = alltrue([
+      for k, v in var.read_replicas :
+      v.private_network == null || v.private_network.ip_net == null || can(cidrhost(v.private_network.ip_net, 0))
+    ])
+    error_message = "Read replica ip_net must be a valid CIDR notation (e.g., '192.168.1.10/24')."
+  }
+
+  validation {
+    condition = alltrue([
+      for k, v in var.read_replicas :
+      v.private_network == null || v.private_network.ip_net != null || v.private_network.enable_ipam == true
+    ])
+    error_message = "Read replica private_network needs ip_net or enable_ipam = true."
+  }
 }
 
 # ==============================================================================
@@ -763,7 +795,8 @@ variable "manual_backups" {
     They are independent of the automatic backup schedule.
 
     Note: Manual backups are only available for instances with
-    storage <= 585GB.
+    storage <= 585GB; a plan-time warning is raised when volume_size_in_gb
+    is larger. database_name is not cross-checked against databases.
 
     Example:
     {
@@ -793,10 +826,9 @@ variable "manual_backups" {
 
 variable "logs_policy" {
   description = <<-EOT
-    Configuration for database logs retention and export.
+    Configuration for database logs retention.
 
-    Controls how long logs are retained and whether they are
-    exported to Scaleway Cockpit for centralized monitoring.
+    Controls how long logs are retained and how much disk they may use.
 
     Configuration:
     - max_age_retention: Days to retain logs (1-365)

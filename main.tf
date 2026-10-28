@@ -31,7 +31,7 @@ resource "scaleway_rdb_instance" "this" {
   disable_backup            = !var.backup_enabled
   backup_schedule_frequency = var.backup_enabled ? var.backup_schedule_frequency : null
   backup_schedule_retention = var.backup_enabled ? var.backup_schedule_retention : null
-  backup_same_region        = var.backup_same_region
+  backup_same_region        = var.backup_enabled ? var.backup_same_region : null
 
   # Engine settings
   settings      = var.settings

@@ -90,6 +90,13 @@ The module SHALL accept the admin password as `admin_user_password` or as the wr
 - **WHEN** the caller changes `admin_user_password_wo_version`
 - **THEN** the new write-only password is applied to the instance
 
+### Requirement: Ephemeral admin password
+`admin_user_password_wo` SHALL be declared `sensitive` and `ephemeral`. `users[*].password_wo` cannot be ephemeral because `users` is iterated with `for_each`; `SECURITY.md` documents that limit.
+
+#### Scenario: Ephemeral admin password
+- **WHEN** `admin_user_password_wo` is supplied from an ephemeral source
+- **THEN** the plan succeeds and the value appears neither in state nor in the plan file
+
 ### Requirement: Password complexity
 `admin_user_password`, `admin_user_password_wo` and every `users[*].password` or `users[*].password_wo` that is set SHALL be 8 to 128 characters long and contain at least one uppercase letter, one lowercase letter, one digit and one special character from `!@#$%^&*()_+-=[]{}|;:,.<>?`.
 
