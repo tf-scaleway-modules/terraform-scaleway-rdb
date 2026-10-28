@@ -244,6 +244,7 @@ output "manual_backups" {
       database_name = v.database_name
       instance_id   = v.instance_id
       size          = v.size
+      expires_at    = v.expires_at
       created_at    = v.created_at
       updated_at    = v.updated_at
     }

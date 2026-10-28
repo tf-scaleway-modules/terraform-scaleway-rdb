@@ -18,3 +18,18 @@ data "scaleway_account_project" "this" {
   name            = var.project_name
   organization_id = var.organization_id
 }
+
+# ==============================================================================
+# Clone Source Data Source
+# ------------------------------------------------------------------------------
+# Reads the instance given in clone_from once, to check that the inputs the
+# provider does not apply at clone time equal the source values.
+# Only read when clone_from is set.
+# ==============================================================================
+
+data "scaleway_rdb_instance" "source" {
+  count = var.clone_from != null ? 1 : 0
+
+  instance_id = var.clone_from
+  region      = var.region
+}

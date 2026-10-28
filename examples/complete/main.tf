@@ -9,6 +9,8 @@
 # ║  - Private network (optional)                                                ║
 # ║  - Encryption at rest                                                        ║
 # ║  - Comprehensive ACL rules                                                   ║
+# ║  - Manual backup with expiry                                                 ║
+# ║  - Opt-in staging clone (enable_staging_clone)                               ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 
 # ==============================================================================
@@ -39,6 +41,12 @@ variable "admin_password" {
   type        = string
   sensitive   = true
   ephemeral   = true
+}
+
+variable "enable_staging_clone" {
+  description = "Create a staging clone of the production database"
+  type        = bool
+  default     = false
 }
 
 variable "app_password" {
@@ -191,6 +199,15 @@ module "production_database" {
     }
   }
 
+  # Manual backup that expires, so it does not accumulate and bill forever
+  manual_backups = {
+    pre_migration = {
+      database_name = "production"
+      name          = "pre-migration-backup"
+      expires_at    = "2027-01-31T00:00:00Z"
+    }
+  }
+
   # Read replicas for read scaling
   # Note: Cross-region replicas require special configuration
   read_replicas = {}
@@ -202,6 +219,36 @@ module "production_database" {
     cost_center  = "engineering"
     managed_by   = "terraform"
     backup_class = "gold"
+  }
+}
+
+# ==============================================================================
+# RDB Module - Staging Clone (opt-in)
+# ------------------------------------------------------------------------------
+# The clone keeps the databases and users of production, so it declares none and
+# sets no engine and no admin user. Storage and HA match the source; the plan
+# fails otherwise. Engine upgrades: change the production engine, expect a
+# blue/green upgrade (writes made during it are lost; a second apply may be
+# needed for the ACL; never re-apply during an upgrade). The update timeout is 60m.
+# ==============================================================================
+
+module "staging_database" {
+  source = "../../"
+  count  = var.enable_staging_clone ? 1 : 0
+
+  clone_from = module.production_database.instance_id
+
+  name          = "staging-postgres-clone"
+  node_type     = "db-gp-s"
+  region        = "fr-par"
+  is_ha_cluster = true
+
+  volume_type       = "sbs_5k"
+  volume_size_in_gb = 100
+
+  tags = {
+    environment = "staging"
+    managed_by  = "terraform"
   }
 }
 
@@ -255,4 +302,14 @@ output "encryption_enabled" {
 output "backup_enabled" {
   description = "Whether automated backups are enabled"
   value       = module.production_database.backup_enabled
+}
+
+output "staging_clone_endpoint" {
+  description = "Public endpoint of the staging clone (null when enable_staging_clone is false)"
+  value = one([
+    for m in module.staging_database : {
+      host = m.connection_host
+      port = m.connection_port
+    }
+  ])
 }
