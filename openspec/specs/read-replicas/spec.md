@@ -39,11 +39,15 @@ At most 3 read replicas SHALL be accepted, and each replica `region`, when set, 
 - **THEN** the plan is rejected with "Read replica region must be one of: fr-par, nl-ams, pl-waw."
 
 ### Requirement: Replica outputs
-`read_replicas` SHALL map each key to an object with `id`, `direct_access` (`ip` and `port`, or `null`) and `private_network` (`ip` and `port`, or `null`).
+`read_replicas` SHALL map each key to an object with `id`, `direct_access` (`ip`, `port` and `hostname`, or `null`) and `private_network` (`ip`, `port` and `hostname`, or `null`).
 
 #### Scenario: Direct access replica output
 - **WHEN** a replica without private network is created
-- **THEN** its `direct_access` is the endpoint `ip` and `port` and its `private_network` is `null`
+- **THEN** its `direct_access` is the endpoint `ip`, `port` and `hostname` and its `private_network` is `null`
+
+#### Scenario: Private replica output
+- **WHEN** a replica with a private network is created
+- **THEN** its `private_network` carries `ip`, `port` and `hostname` and its `direct_access` is `null`
 
 ### Requirement: Replica private network address validation
 A replica `private_network.ip_net`, when set, SHALL be valid CIDR notation, and one of `ip_net` or `enable_ipam = true` MUST be set. Setting both stays accepted: the static address takes precedence at the provider.

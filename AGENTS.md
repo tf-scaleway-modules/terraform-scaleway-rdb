@@ -32,8 +32,9 @@ The checkable form of each line is the `quality` store (`quality-simplicity`,
 - Never edit the README between `BEGIN_TF_DOCS` / `END_TF_DOCS`; terraform-docs owns it.
 
 ## Module-specific
-- The admin and user passwords have a write-only form (`admin_user_password_wo`,
-  `users[*].password_wo`, with `*_wo_version`); exactly one form is set per user.
+- Passwords are write-only and ephemeral (`admin_user_password`, `user_passwords`, with
+  `admin_user.password_version` and `users[*].password_version`); none lands in state or plan.
+  Every key of `users` needs an entry in `user_passwords`.
 - Plan-time guards are `precondition` blocks on `scaleway_rdb_instance.this`;
   `0.0.0.0/0` in `acl_rules` needs `allow_public_access = true`.
 - New behaviour extends `tests/main.tftest.hcl`; warnings live in `checks.tf`.
