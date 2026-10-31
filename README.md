@@ -21,7 +21,7 @@ A **production-ready** Terraform/OpenTofu module for managing Scaleway Relationa
 
 - Terraform >= 1.11 or OpenTofu >= 1.11
 - Scaleway account with API credentials configured
-- Scaleway provider >= 2.86
+- Scaleway provider >= 2.89
 
 ### Basic Usage
 
@@ -148,6 +148,46 @@ module "production_db" {
 }
 ```
 
+### Clone an instance
+
+Set `clone_from` (instance UUID or `<region>/<UUID>`) instead of `engine` to create an
+independent copy of an existing instance:
+
+```hcl
+module "staging" {
+  source = "path/to/scaleway-rdb"
+
+  name          = "staging-db"
+  node_type     = "db-gp-s"
+  clone_from    = module.database.instance_id
+  is_ha_cluster = true # required when the source is a high-availability cluster
+}
+```
+
+- Inherited: engine, databases, users and permissions of the source. Declare in `databases`,
+  `users` and `privileges` only new entries; an existing name fails at apply with an API conflict.
+- Must match the source (checked at plan time): `volume_type`, `volume_size_in_gb` (block storage),
+  `encryption_at_rest`, `init_settings`. A high-availability source needs `is_ha_cluster = true`.
+- Not allowed: `engine`, `admin_user_name` and the admin passwords (the clone takes no password; the
+  `admin_password` and `connection_string` outputs are `null`).
+- `project_id` is not applied: the clone stays in the project of the source.
+- Without `private_network` the clone keeps its public endpoint; with it, the clone is private only.
+- Setting `clone_from` on an existing instance **replaces** it.
+
+### Engine upgrade
+
+Changing `engine` of an existing instance runs a blue/green upgrade in the provider (update timeout
+60 minutes). Writes made between the snapshot and the switch are lost, `scaleway_rdb_acl` may need a
+second apply because it uses the instance ID, and the apply must never be re-run while an upgrade is
+in progress.
+
+### Upgrading to v2.0.0
+
+The provider floor is raised from `~> 2.86` to `~> 2.89` because `clone_from` needs provider 2.89.0.
+Run `tofu init -upgrade` (or `terraform init -upgrade`) to refresh the lock file. No input, output or
+resource address is removed or renamed; `engine` is now optional (exactly one of `engine` and
+`clone_from` is set) and the instance update timeout is 60 minutes instead of 30.
+
 ## Examples
 
 - [Minimal](./examples/minimal/) - Basic PostgreSQL setup with single database and user
@@ -212,13 +252,13 @@ The module validates ACL rules to prevent accidental public exposure:
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.11.0 |
-| <a name="requirement_scaleway"></a> [scaleway](#requirement\_scaleway) | ~> 2.86 |
+| <a name="requirement_scaleway"></a> [scaleway](#requirement\_scaleway) | ~> 2.89 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_scaleway"></a> [scaleway](#provider\_scaleway) | ~> 2.86 |
+| <a name="provider_scaleway"></a> [scaleway](#provider\_scaleway) | ~> 2.89 |
 
 ## Modules
 
@@ -236,6 +276,7 @@ No modules.
 | [scaleway_rdb_read_replica.this](https://registry.terraform.io/providers/scaleway/scaleway/latest/docs/resources/rdb_read_replica) | resource |
 | [scaleway_rdb_user.this](https://registry.terraform.io/providers/scaleway/scaleway/latest/docs/resources/rdb_user) | resource |
 | [scaleway_account_project.this](https://registry.terraform.io/providers/scaleway/scaleway/latest/docs/data-sources/account_project) | data source |
+| [scaleway_rdb_instance.source](https://registry.terraform.io/providers/scaleway/scaleway/latest/docs/data-sources/rdb_instance) | data source |
 
 ## Inputs
 
@@ -251,13 +292,14 @@ No modules.
 | <a name="input_backup_same_region"></a> [backup\_same\_region](#input\_backup\_same\_region) | Store backups in the same region as the instance.<br/><br/>When false (default), backups are stored in a different region<br/>for geographic redundancy and disaster recovery.<br/><br/>Default: false (recommended for production) | `bool` | `false` | no |
 | <a name="input_backup_schedule_frequency"></a> [backup\_schedule\_frequency](#input\_backup\_schedule\_frequency) | Hours between automated backups.<br/><br/>Only applies when backup\_enabled is true.<br/><br/>Range: 1 to 168 hours (1 week)<br/>Default: 24 hours (daily backups) | `number` | `24` | no |
 | <a name="input_backup_schedule_retention"></a> [backup\_schedule\_retention](#input\_backup\_schedule\_retention) | Number of days to retain automated backups.<br/><br/>Only applies when backup\_enabled is true.<br/><br/>Range: 1 to 365 days<br/>Default: 14 days | `number` | `14` | no |
+| <a name="input_clone_from"></a> [clone\_from](#input\_clone\_from) | Create the instance as a clone of an existing Database Instance.<br/><br/>Accepts the instance UUID or <region>/<UUID>. The clone keeps the databases, users and<br/>permissions of the source; declare in databases, users and privileges only new ones<br/>(an existing name fails at apply with an API conflict). Provider 2.89.0 or later.<br/><br/>Rules:<br/>- Leave engine null: the clone has the engine of the source.<br/>- Leave admin\_user\_name and the admin passwords null: the clone keeps the users of the source.<br/>- volume\_type, volume\_size\_in\_gb (block storage), encryption\_at\_rest and init\_settings are not<br/>  applied at clone time and must equal the source values (checked at plan time).<br/>- A high-availability source needs is\_ha\_cluster = true.<br/>- project\_id is not applied: the clone stays in the project of the source.<br/>- Without private\_network the clone keeps the public endpoint created by the clone.<br/><br/>WARNING: Setting this value on an existing instance will recreate the instance.<br/><br/>Example: "fr-par/11111111-2222-3333-4444-555555555555" | `string` | `null` | no |
 | <a name="input_databases"></a> [databases](#input\_databases) | Map of databases to create within the RDB instance.<br/><br/>Each database is identified by a unique key used for Terraform resource<br/>addressing. The 'name' field is the actual database name.<br/><br/>Example:<br/>{<br/>  app\_db = {<br/>    name = "application"<br/>  }<br/>  analytics\_db = {<br/>    name = "analytics"<br/>  }<br/>} | <pre>map(object({<br/>    name = string<br/>  }))</pre> | `{}` | no |
 | <a name="input_encryption_at_rest"></a> [encryption\_at\_rest](#input\_encryption\_at\_rest) | Enable encryption at rest using LUKS.<br/><br/>When enabled, all data, logs, and snapshots are encrypted at the<br/>storage volume level. Keys are managed by Scaleway.<br/><br/>WARNING: This setting is IRREVERSIBLE once enabled.<br/>WARNING: Initial encryption may take ~1 hour per 100GB of data.<br/><br/>Default: true (recommended for production) | `bool` | `true` | no |
-| <a name="input_engine"></a> [engine](#input\_engine) | Database engine and version.<br/><br/>Supported engines:<br/>- PostgreSQL: PostgreSQL-11, PostgreSQL-12, PostgreSQL-13, PostgreSQL-14, PostgreSQL-15, PostgreSQL-16, PostgreSQL-17<br/>- MySQL: MySQL-8<br/><br/>Example: "PostgreSQL-15" | `string` | n/a | yes |
+| <a name="input_engine"></a> [engine](#input\_engine) | Database engine and version.<br/><br/>Set exactly one of engine or clone\_from. With clone\_from, leave engine null:<br/>the clone has the engine of its source.<br/><br/>Supported engines:<br/>- PostgreSQL: PostgreSQL-11, PostgreSQL-12, PostgreSQL-13, PostgreSQL-14, PostgreSQL-15, PostgreSQL-16, PostgreSQL-17<br/>- MySQL: MySQL-8<br/><br/>Example: "PostgreSQL-15"<br/><br/>Engine upgrade: changing the version of an existing instance runs a blue/green<br/>upgrade in the provider. Writes made between the snapshot and the switch are<br/>lost, scaleway\_rdb\_acl may need a second apply because it uses the instance ID,<br/>and the apply must never be re-run while an upgrade is in progress. | `string` | `null` | no |
 | <a name="input_init_settings"></a> [init\_settings](#input\_init\_settings) | Initial database engine settings applied at creation.<br/><br/>These settings are applied only when the instance is first created<br/>and cannot be changed afterward without recreating the instance.<br/><br/>Use with caution - most settings should go in 'settings' instead. | `map(string)` | `{}` | no |
 | <a name="input_is_ha_cluster"></a> [is\_ha\_cluster](#input\_is\_ha\_cluster) | Enable High Availability (HA) mode.<br/><br/>When enabled, creates a standby node with synchronous replication<br/>for automatic failover. Recommended for production workloads.<br/><br/>WARNING: Changing this value will recreate the instance.<br/>WARNING: HA clusters cost approximately 2x a standalone instance.<br/><br/>Default: false | `bool` | `false` | no |
 | <a name="input_logs_policy"></a> [logs\_policy](#input\_logs\_policy) | Configuration for database logs retention.<br/><br/>Controls how long logs are retained and how much disk they may use.<br/><br/>Configuration:<br/>- max\_age\_retention: Days to retain logs (1-365)<br/>- total\_disk\_retention: Maximum log storage in bytes (minimum 100000000 = 100MB) | <pre>object({<br/>    max_age_retention    = optional(number, 30)<br/>    total_disk_retention = optional(number, 100000000)<br/>  })</pre> | `null` | no |
-| <a name="input_manual_backups"></a> [manual\_backups](#input\_manual\_backups) | Map of manual database backups to create.<br/><br/>Manual backups are point-in-time exports of specific databases.<br/>They are independent of the automatic backup schedule.<br/><br/>Note: Manual backups are only available for instances with<br/>storage <= 585GB; a plan-time warning is raised when volume\_size\_in\_gb<br/>is larger. database\_name is not cross-checked against databases.<br/><br/>Example:<br/>{<br/>  app\_backup = {<br/>    database\_name = "application"<br/>    name          = "pre-migration-backup"<br/>  }<br/>} | <pre>map(object({<br/>    database_name = string<br/>    name          = string<br/>  }))</pre> | `{}` | no |
+| <a name="input_manual_backups"></a> [manual\_backups](#input\_manual\_backups) | Map of manual database backups to create.<br/><br/>Manual backups are point-in-time exports of specific databases.<br/>They are independent of the automatic backup schedule.<br/><br/>expires\_at (optional) is the expiry of the backup, a UTC timestamp written<br/>YYYY-MM-DDTHH:MM:SSZ. Without it the backup never expires and is billed until<br/>deleted. The provider cannot remove an expiry once set.<br/><br/>Note: Manual backups are only available for instances with<br/>storage <= 585GB; a plan-time warning is raised when volume\_size\_in\_gb<br/>is larger. database\_name is not cross-checked against databases.<br/><br/>Example:<br/>{<br/>  app\_backup = {<br/>    database\_name = "application"<br/>    name          = "pre-migration-backup"<br/>    expires\_at    = "2027-01-31T00:00:00Z"<br/>  }<br/>} | <pre>map(object({<br/>    database_name = string<br/>    name          = string<br/>    expires_at    = optional(string)<br/>  }))</pre> | `{}` | no |
 | <a name="input_name"></a> [name](#input\_name) | Name of the RDB instance.<br/><br/>This is a human-readable identifier for the database instance.<br/>Must be unique within the project.<br/><br/>Naming rules:<br/>- Must start with a letter<br/>- Can contain letters, numbers, and hyphens<br/>- Must be 1-63 characters long | `string` | n/a | yes |
 | <a name="input_node_type"></a> [node\_type](#input\_node\_type) | The type of database instance node.<br/><br/>Node type determines CPU, RAM, and performance characteristics.<br/>Available types vary by region.<br/><br/>Common types:<br/>- Development: db-dev-s, db-dev-m, db-dev-l, db-dev-xl<br/>- General Purpose: db-gp-xs, db-gp-s, db-gp-m, db-gp-l, db-gp-xl<br/>- Play2: db-play2-pico, db-play2-nano, db-play2-micro<br/><br/>Example: "db-dev-s" | `string` | n/a | yes |
 | <a name="input_organization_id"></a> [organization\_id](#input\_organization\_id) | Scaleway Organization ID.<br/><br/>Required when using project\_name to look up the project.<br/>The organization is the top-level entity in Scaleway's hierarchy.<br/>Find this in the Scaleway Console under Organization Settings.<br/><br/>Format: UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx) | `string` | `null` | no |
@@ -358,5 +400,5 @@ This module is provided "as is" without warranty. Always test in non-production 
 [apache-shield]: https://img.shields.io/badge/License-Apache%202.0-blue.svg
 [terraform-badge]: https://img.shields.io/badge/Terraform-%3E%3D1.11-623CE4
 [terraform-url]: https://www.terraform.io
-[scaleway-badge]: https://img.shields.io/badge/Scaleway%20Provider-%3E%3D2.86-4f0599
+[scaleway-badge]: https://img.shields.io/badge/Scaleway%20Provider-%3E%3D2.89-4f0599
 [scaleway-url]: https://registry.terraform.io/providers/scaleway/scaleway/

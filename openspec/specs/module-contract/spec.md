@@ -6,7 +6,7 @@ Supported tool and provider versions, input and output contract and write-only p
 ## Requirements
 
 ### Requirement: Supported tool and provider versions
-The module SHALL declare `required_version = ">= 1.11.0"` and the provider `scaleway/scaleway` with version constraint `~> 2.86` in `versions.tf`.
+The module SHALL declare `required_version = ">= 1.11.0"` and the provider `scaleway/scaleway` with version constraint `~> 2.89` in `versions.tf`, because `clone_from` exists from provider 2.89.0.
 
 #### Scenario: Older OpenTofu or Terraform
 - **WHEN** the module is initialised with OpenTofu or Terraform older than 1.11.0
@@ -14,7 +14,11 @@ The module SHALL declare `required_version = ">= 1.11.0"` and the provider `scal
 
 #### Scenario: Provider constraint
 - **WHEN** the module is initialised
-- **THEN** the `scaleway/scaleway` provider is selected within `~> 2.86`
+- **THEN** the `scaleway/scaleway` provider is selected within `~> 2.89`
+
+#### Scenario: Older provider locked by the caller
+- **WHEN** the caller's lock file pins `scaleway/scaleway` 2.86.0
+- **THEN** `init` fails until the caller runs `init -upgrade`
 
 ### Requirement: No provider or backend configuration
 The module SHALL NOT contain a `provider` block or a `backend` block; the caller configures the Scaleway provider (credentials, default region, default project).
@@ -24,15 +28,19 @@ The module SHALL NOT contain a `provider` block or a `backend` block; the caller
 - **THEN** the Scaleway provider configuration comes from the caller, and the module only declares `required_providers`
 
 ### Requirement: Required and optional inputs
-The module SHALL expose 31 input variables, of which exactly `name` (string), `engine` (string) and `node_type` (string) are required; every other input has a default.
+The module SHALL expose 32 input variables, of which exactly `name` (string) and `node_type` (string) are required; every other input has a default. `engine` and `clone_from` have a `null` default and exactly one of them MUST be set (see the instances capability).
 
 #### Scenario: Only required inputs set
-- **WHEN** the caller sets only `name`, `engine` and `node_type`
+- **WHEN** the caller sets only `name`, `node_type` and `engine`
 - **THEN** the inputs are accepted, with no admin user, no database, no user, no privilege, no ACL rule, no read replica and no manual backup
 
 #### Scenario: Missing required input
-- **WHEN** the caller omits `name`, `engine` or `node_type`
+- **WHEN** the caller omits `name` or `node_type`
 - **THEN** the configuration is rejected because the variable has no value
+
+#### Scenario: Existing configuration
+- **WHEN** a configuration written for the previous release sets `name`, `engine` and `node_type`
+- **THEN** it is accepted unchanged
 
 ### Requirement: Input defaults
 The optional inputs SHALL default to `null` (scalar and object inputs without a natural empty value), `false`, `true`, a number or an empty map as listed in the scenarios.
@@ -43,7 +51,7 @@ The optional inputs SHALL default to `null` (scalar and object inputs without a 
 
 #### Scenario: Null defaults
 - **WHEN** the caller sets only the required inputs
-- **THEN** `organization_id`, `project_name`, `project_id`, `region`, `volume_size_in_gb`, `admin_user_name`, `admin_user_password`, `admin_user_password_wo`, `admin_user_password_wo_version`, `private_network` and `logs_policy` are `null`
+- **THEN** `engine`, `clone_from`, `organization_id`, `project_name`, `project_id`, `region`, `volume_size_in_gb`, `admin_user_name`, `admin_user_password`, `admin_user_password_wo`, `admin_user_password_wo_version`, `private_network` and `logs_policy` are `null`
 
 #### Scenario: Other defaults
 - **WHEN** the caller sets only the required inputs
@@ -168,7 +176,7 @@ The `connection_string` output SHALL be `null` unless both `admin_user_name` and
 - **THEN** `instance_private_network` is `null`
 
 ### Requirement: Engine helper outputs
-`engine_type` SHALL be `"postgresql"` for engines starting with `PostgreSQL-`, `"mysql"` for engines starting with `MySQL-` and `"unknown"` otherwise. `engine_default_port` SHALL be `5432` for PostgreSQL engines and `3306` otherwise.
+`engine_type` SHALL be `"postgresql"` for engines starting with `PostgreSQL-`, `"mysql"` for engines starting with `MySQL-` and `"unknown"` otherwise. `engine_default_port` SHALL be `5432` for PostgreSQL engines and `3306` otherwise. The engine is the `engine` input, or the engine of the instance when `engine` is null (clone).
 
 #### Scenario: PostgreSQL engine
 - **WHEN** `engine = "PostgreSQL-16"`
@@ -177,6 +185,10 @@ The `connection_string` output SHALL be `null` unless both `admin_user_name` and
 #### Scenario: MySQL engine
 - **WHEN** `engine = "MySQL-8"`
 - **THEN** `engine_type` is `"mysql"` and `engine_default_port` is `3306`
+
+#### Scenario: Cloned engine
+- **WHEN** `engine` is null and `clone_from` is set
+- **THEN** `engine_type` and `engine_default_port` follow the engine the clone reports (known after apply)
 
 ### Requirement: Setting echo outputs
 `encryption_at_rest_enabled` SHALL return `encryption_at_rest` and `backup_enabled` SHALL return the `backup_enabled` input; `instance_id`, `instance_name`, `instance_engine`, `instance_is_ha_cluster`, `instance_node_type`, `instance_region` and `instance_certificate` SHALL return the matching attributes of the instance.

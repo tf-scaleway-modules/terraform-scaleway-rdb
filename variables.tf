@@ -92,24 +92,6 @@ variable "name" {
   }
 }
 
-variable "engine" {
-  description = <<-EOT
-    Database engine and version.
-
-    Supported engines:
-    - PostgreSQL: PostgreSQL-11, PostgreSQL-12, PostgreSQL-13, PostgreSQL-14, PostgreSQL-15, PostgreSQL-16, PostgreSQL-17
-    - MySQL: MySQL-8
-
-    Example: "PostgreSQL-15"
-  EOT
-  type        = string
-
-  validation {
-    condition     = can(regex("^(PostgreSQL-(1[1-7])|MySQL-8)$", var.engine))
-    error_message = "Engine must be PostgreSQL-11 through PostgreSQL-17, or MySQL-8."
-  }
-}
-
 variable "node_type" {
   description = <<-EOT
     The type of database instance node.
@@ -129,6 +111,63 @@ variable "node_type" {
   validation {
     condition     = can(regex("^db-(dev|gp|play2)-", var.node_type))
     error_message = "Node type must start with 'db-dev-', 'db-gp-', or 'db-play2-'."
+  }
+}
+
+variable "engine" {
+  description = <<-EOT
+    Database engine and version.
+
+    Set exactly one of engine or clone_from. With clone_from, leave engine null:
+    the clone has the engine of its source.
+
+    Supported engines:
+    - PostgreSQL: PostgreSQL-11, PostgreSQL-12, PostgreSQL-13, PostgreSQL-14, PostgreSQL-15, PostgreSQL-16, PostgreSQL-17
+    - MySQL: MySQL-8
+
+    Example: "PostgreSQL-15"
+
+    Engine upgrade: changing the version of an existing instance runs a blue/green
+    upgrade in the provider. Writes made between the snapshot and the switch are
+    lost, scaleway_rdb_acl may need a second apply because it uses the instance ID,
+    and the apply must never be re-run while an upgrade is in progress.
+  EOT
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.engine == null || can(regex("^(PostgreSQL-(1[1-7])|MySQL-8)$", var.engine))
+    error_message = "Engine must be PostgreSQL-11 through PostgreSQL-17, or MySQL-8."
+  }
+}
+
+variable "clone_from" {
+  description = <<-EOT
+    Create the instance as a clone of an existing Database Instance.
+
+    Accepts the instance UUID or <region>/<UUID>. The clone keeps the databases, users and
+    permissions of the source; declare in databases, users and privileges only new ones
+    (an existing name fails at apply with an API conflict). Provider 2.89.0 or later.
+
+    Rules:
+    - Leave engine null: the clone has the engine of the source.
+    - Leave admin_user_name and the admin passwords null: the clone keeps the users of the source.
+    - volume_type, volume_size_in_gb (block storage), encryption_at_rest and init_settings are not
+      applied at clone time and must equal the source values (checked at plan time).
+    - A high-availability source needs is_ha_cluster = true.
+    - project_id is not applied: the clone stays in the project of the source.
+    - Without private_network the clone keeps the public endpoint created by the clone.
+
+    WARNING: Setting this value on an existing instance will recreate the instance.
+
+    Example: "fr-par/11111111-2222-3333-4444-555555555555"
+  EOT
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.clone_from == null || can(regex("^([a-z]{2}-[a-z]{3}/)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", var.clone_from))
+    error_message = "clone_from must be an instance UUID or <region>/<UUID> (the instance_id format)."
   }
 }
 
@@ -794,6 +833,10 @@ variable "manual_backups" {
     Manual backups are point-in-time exports of specific databases.
     They are independent of the automatic backup schedule.
 
+    expires_at (optional) is the expiry of the backup, a UTC timestamp written
+    YYYY-MM-DDTHH:MM:SSZ. Without it the backup never expires and is billed until
+    deleted. The provider cannot remove an expiry once set.
+
     Note: Manual backups are only available for instances with
     storage <= 585GB; a plan-time warning is raised when volume_size_in_gb
     is larger. database_name is not cross-checked against databases.
@@ -803,12 +846,14 @@ variable "manual_backups" {
       app_backup = {
         database_name = "application"
         name          = "pre-migration-backup"
+        expires_at    = "2027-01-31T00:00:00Z"
       }
     }
   EOT
   type = map(object({
     database_name = string
     name          = string
+    expires_at    = optional(string)
   }))
   default = {}
 
@@ -817,6 +862,16 @@ variable "manual_backups" {
       for k, v in var.manual_backups : can(regex("^[a-zA-Z][a-zA-Z0-9_-]{0,62}$", v.name))
     ])
     error_message = "Backup names must start with a letter, contain only letters, numbers, underscores, and hyphens, and be 1-63 characters."
+  }
+
+  validation {
+    condition = alltrue([
+      for k, v in var.manual_backups : v.expires_at == null || (
+        can(regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$", v.expires_at)) &&
+        can(timeadd(v.expires_at, "0s"))
+      )
+    ])
+    error_message = "expires_at must be a UTC timestamp like 2027-01-31T00:00:00Z."
   }
 }
 

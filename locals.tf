@@ -27,11 +27,14 @@ locals {
   # Build connection strings for supported engines
   # ==============================================================================
 
+  # Engine of the instance: the input, or the engine of the source for a clone
+  engine = var.engine != null ? var.engine : scaleway_rdb_instance.this.engine
+
   # Determine if engine is PostgreSQL
-  is_postgresql = can(regex("^PostgreSQL-", var.engine))
+  is_postgresql = can(regex("^PostgreSQL-", local.engine))
 
   # Determine if engine is MySQL
-  is_mysql = can(regex("^MySQL-", var.engine))
+  is_mysql = can(regex("^MySQL-", local.engine))
 
   # Default port based on engine
   default_port = local.is_postgresql ? 5432 : 3306
