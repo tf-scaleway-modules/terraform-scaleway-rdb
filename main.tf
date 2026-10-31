@@ -8,6 +8,7 @@ resource "scaleway_rdb_instance" "this" {
   name       = var.name
   engine     = var.engine
   node_type  = var.node_type
+  clone_from = var.clone_from
   region     = var.region
   project_id = local.project_id
 
@@ -36,6 +37,13 @@ resource "scaleway_rdb_instance" "this" {
   # Engine settings
   settings      = var.settings
   init_settings = var.init_settings
+
+  # Public endpoint of a clone: without this block the provider deletes the one
+  # created by the clone, leaving no endpoint when private_network is not set
+  dynamic "load_balancer" {
+    for_each = var.clone_from != null && var.private_network == null ? [1] : []
+    content {}
+  }
 
   # Private network configuration
   dynamic "private_network" {
@@ -91,6 +99,37 @@ resource "scaleway_rdb_instance" "this" {
       error_message = "admin_user_name must be set together with exactly one of admin_user_password or admin_user_password_wo, or none of them."
     }
 
+    # Validate engine source
+    precondition {
+      condition     = (var.engine == null) != (var.clone_from == null)
+      error_message = "Set exactly one of engine or clone_from."
+    }
+
+    # A clone keeps the users of its source
+    precondition {
+      condition = var.clone_from == null || (
+        var.admin_user_name == null && var.admin_user_password == null && var.admin_user_password_wo == null
+      )
+      error_message = "admin_user_name and the admin password cannot be set with clone_from: the clone keeps the users of its source."
+    }
+
+    # The provider does not apply these at clone time: they must equal the source
+    precondition {
+      condition = var.clone_from == null || (
+        var.volume_type == one(data.scaleway_rdb_instance.source[*].volume_type) &&
+        (var.volume_type == "lssd" || var.volume_size_in_gb == one(data.scaleway_rdb_instance.source[*].volume_size_in_gb)) &&
+        var.encryption_at_rest == one(data.scaleway_rdb_instance.source[*].encryption_at_rest) &&
+        var.init_settings == one(data.scaleway_rdb_instance.source[*].init_settings)
+      )
+      error_message = "With clone_from, volume_type, volume_size_in_gb (block storage), encryption_at_rest and init_settings must match the source instance."
+    }
+
+    # The default is_ha_cluster = false would ask the provider to switch HA off on the clone
+    precondition {
+      condition     = var.clone_from == null || var.is_ha_cluster || !one(data.scaleway_rdb_instance.source[*].is_ha_cluster)
+      error_message = "clone_from cannot turn off high availability: set is_ha_cluster = true to clone a high-availability source."
+    }
+
     # Validate ACL security - prevent public access unless explicitly allowed
     precondition {
       condition = var.allow_public_access || !anytrue([
@@ -102,7 +141,7 @@ resource "scaleway_rdb_instance" "this" {
 
   timeouts {
     create = "30m"
-    update = "30m"
+    update = "60m"
     delete = "30m"
   }
 }
@@ -197,6 +236,7 @@ resource "scaleway_rdb_database_backup" "this" {
   instance_id   = scaleway_rdb_instance.this.id
   database_name = each.value.database_name
   name          = each.value.name
+  expires_at    = each.value.expires_at
   region        = var.region
 
   # Ensure databases exist before creating backups

@@ -33,7 +33,7 @@ context: |
   openspec/specs/ describes the contract as released.
 
   Stack: HCL only. required_version >= 1.11.0 (write-only arguments).
-  Provider pinned with ~> in versions.tf: scaleway/scaleway ~> 2.86. Every
+  Provider pinned with ~> in versions.tf: scaleway/scaleway ~> 2.89. Every
   tool is pinned in mise.toml.
 
   Layout: main.tf holds every resource (instance, database, user, privilege,

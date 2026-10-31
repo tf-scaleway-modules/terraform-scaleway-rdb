@@ -239,3 +239,330 @@ run "large_volume_with_manual_backup_warns" {
 
   expect_failures = [check.manual_backup_volume_size]
 }
+
+# ------------------------------------------------------------------------------
+# Clone from an existing instance
+# ------------------------------------------------------------------------------
+
+run "clone_public_plans_with_load_balancer" {
+  command = plan
+
+  variables {
+    engine     = null
+    clone_from = "fr-par/66666666-2222-3333-4444-555555555555"
+  }
+
+  override_data {
+    target = data.scaleway_rdb_instance.source
+    values = {
+      engine             = "PostgreSQL-15"
+      volume_type        = "lssd"
+      volume_size_in_gb  = 0
+      encryption_at_rest = true
+      is_ha_cluster      = false
+      init_settings      = {}
+    }
+  }
+
+  assert {
+    condition     = scaleway_rdb_instance.this.clone_from == "fr-par/66666666-2222-3333-4444-555555555555" && var.engine == null
+    error_message = "A clone sets clone_from and no engine input"
+  }
+
+  assert {
+    condition     = length(scaleway_rdb_instance.this.load_balancer) == 1 && length(scaleway_rdb_instance.this.private_network) == 0
+    error_message = "A public clone keeps the load_balancer block"
+  }
+
+  assert {
+    condition     = one(scaleway_rdb_instance.this.timeouts[*].update) == "60m"
+    error_message = "The update timeout must be 60m"
+  }
+}
+
+run "clone_private_has_no_load_balancer" {
+  command = plan
+
+  variables {
+    engine     = null
+    clone_from = "66666666-2222-3333-4444-555555555555"
+    private_network = {
+      pn_id       = "fr-par/11111111-2222-3333-4444-555555555555"
+      enable_ipam = true
+    }
+  }
+
+  override_data {
+    target = data.scaleway_rdb_instance.source
+    values = {
+      volume_type        = "lssd"
+      encryption_at_rest = true
+      is_ha_cluster      = false
+      init_settings      = {}
+    }
+  }
+
+  assert {
+    condition     = length(scaleway_rdb_instance.this.load_balancer) == 0 && length(scaleway_rdb_instance.this.private_network) == 1
+    error_message = "A private clone has the private network and no load_balancer block"
+  }
+}
+
+run "not_a_clone_has_no_load_balancer" {
+  command = plan
+
+  assert {
+    condition     = length(scaleway_rdb_instance.this.load_balancer) == 0 && scaleway_rdb_instance.this.clone_from == null
+    error_message = "A regular instance has no load_balancer block and no clone_from"
+  }
+
+  assert {
+    condition     = one(scaleway_rdb_instance.this.timeouts[*].update) == "60m"
+    error_message = "The update timeout must be 60m"
+  }
+}
+
+run "clone_ha_source_cloned_as_ha" {
+  command = plan
+
+  variables {
+    engine        = null
+    clone_from    = "66666666-2222-3333-4444-555555555555"
+    is_ha_cluster = true
+  }
+
+  override_data {
+    target = data.scaleway_rdb_instance.source
+    values = {
+      volume_type        = "lssd"
+      encryption_at_rest = true
+      is_ha_cluster      = true
+      init_settings      = {}
+    }
+  }
+
+  assert {
+    condition     = scaleway_rdb_instance.this.is_ha_cluster
+    error_message = "An HA source can be cloned with is_ha_cluster = true"
+  }
+}
+
+run "clone_engine_type_follows_the_instance" {
+  command = apply
+
+  variables {
+    engine     = null
+    clone_from = "66666666-2222-3333-4444-555555555555"
+  }
+
+  override_data {
+    target = data.scaleway_rdb_instance.source
+    values = {
+      volume_type        = "lssd"
+      encryption_at_rest = true
+      is_ha_cluster      = false
+      init_settings      = {}
+    }
+  }
+
+  override_resource {
+    target = scaleway_rdb_instance.this
+    values = {
+      id     = "fr-par/11111111-2222-3333-4444-555555555555"
+      engine = "MySQL-8"
+    }
+  }
+
+  assert {
+    condition     = output.engine_type == "mysql" && output.engine_default_port == 3306
+    error_message = "engine_type and engine_default_port must follow the engine of the clone"
+  }
+}
+
+run "clone_invalid_source_rejected" {
+  command = plan
+
+  variables {
+    engine     = null
+    clone_from = "not-an-id"
+  }
+
+  expect_failures = [var.clone_from]
+}
+
+run "engine_unsupported_still_rejected" {
+  command = plan
+
+  variables {
+    engine = "PostgreSQL-10"
+  }
+
+  expect_failures = [var.engine]
+}
+
+run "neither_engine_nor_clone_rejected" {
+  command = plan
+
+  variables {
+    engine = null
+  }
+
+  expect_failures = [scaleway_rdb_instance.this]
+}
+
+run "both_engine_and_clone_rejected" {
+  command = plan
+
+  variables {
+    clone_from = "66666666-2222-3333-4444-555555555555"
+  }
+
+  override_data {
+    target = data.scaleway_rdb_instance.source
+    values = {
+      volume_type        = "lssd"
+      encryption_at_rest = true
+      is_ha_cluster      = false
+      init_settings      = {}
+    }
+  }
+
+  expect_failures = [scaleway_rdb_instance.this]
+}
+
+run "clone_with_admin_user_rejected" {
+  command = plan
+
+  variables {
+    engine                 = null
+    clone_from             = "66666666-2222-3333-4444-555555555555"
+    admin_user_name        = "admin"
+    admin_user_password_wo = "Abcdef1!xyz"
+  }
+
+  override_data {
+    target = data.scaleway_rdb_instance.source
+    values = {
+      volume_type        = "lssd"
+      encryption_at_rest = true
+      is_ha_cluster      = false
+      init_settings      = {}
+    }
+  }
+
+  expect_failures = [scaleway_rdb_instance.this]
+}
+
+run "clone_block_storage_source_with_default_volume_rejected" {
+  command = plan
+
+  variables {
+    engine     = null
+    clone_from = "66666666-2222-3333-4444-555555555555"
+  }
+
+  override_data {
+    target = data.scaleway_rdb_instance.source
+    values = {
+      volume_type        = "sbs_5k"
+      volume_size_in_gb  = 50
+      encryption_at_rest = true
+      is_ha_cluster      = false
+      init_settings      = {}
+    }
+  }
+
+  expect_failures = [scaleway_rdb_instance.this]
+}
+
+run "clone_unencrypted_source_with_default_encryption_rejected" {
+  command = plan
+
+  variables {
+    engine     = null
+    clone_from = "66666666-2222-3333-4444-555555555555"
+  }
+
+  override_data {
+    target = data.scaleway_rdb_instance.source
+    values = {
+      volume_type        = "lssd"
+      encryption_at_rest = false
+      is_ha_cluster      = false
+      init_settings      = {}
+    }
+  }
+
+  expect_failures = [scaleway_rdb_instance.this]
+}
+
+run "clone_ha_source_with_default_ha_rejected" {
+  command = plan
+
+  variables {
+    engine     = null
+    clone_from = "66666666-2222-3333-4444-555555555555"
+  }
+
+  override_data {
+    target = data.scaleway_rdb_instance.source
+    values = {
+      volume_type        = "lssd"
+      encryption_at_rest = true
+      is_ha_cluster      = true
+      init_settings      = {}
+    }
+  }
+
+  expect_failures = [scaleway_rdb_instance.this]
+}
+
+# ------------------------------------------------------------------------------
+# Manual backup expiry
+# ------------------------------------------------------------------------------
+
+run "manual_backup_with_expiry" {
+  command = apply
+
+  variables {
+    databases      = { app = { name = "application" } }
+    manual_backups = { b = { database_name = "application", name = "pre-migration", expires_at = "2027-01-31T00:00:00Z" } }
+  }
+
+  override_resource {
+    target = scaleway_rdb_instance.this
+    values = {
+      id = "fr-par/11111111-2222-3333-4444-555555555555"
+    }
+  }
+
+  assert {
+    condition     = scaleway_rdb_database_backup.this["b"].expires_at == "2027-01-31T00:00:00Z"
+    error_message = "The backup must carry the expiry"
+  }
+
+  assert {
+    condition     = output.manual_backups["b"].expires_at == "2027-01-31T00:00:00Z"
+    error_message = "The manual_backups output must expose expires_at"
+  }
+}
+
+run "manual_backup_offset_expiry_rejected" {
+  command = plan
+
+  variables {
+    manual_backups = { b = { database_name = "application", name = "pre-migration", expires_at = "2027-01-31T01:00:00+01:00" } }
+  }
+
+  expect_failures = [var.manual_backups]
+}
+
+run "manual_backup_invalid_expiry_rejected" {
+  command = plan
+
+  variables {
+    manual_backups = { b = { database_name = "application", name = "pre-migration", expires_at = "next week" } }
+  }
+
+  expect_failures = [var.manual_backups]
+}
