@@ -10,38 +10,37 @@ resource "scaleway_rdb_instance" "this" {
   node_type  = var.node_type
   clone_from = var.clone_from
   region     = var.region
-  project_id = local.project_id
+  project_id = var.project_id
 
   # High Availability
   is_ha_cluster = var.is_ha_cluster
 
   # Admin user (optional - created with instance)
-  user_name           = var.admin_user_name
-  password            = var.admin_user_password
-  password_wo         = var.admin_user_password_wo
-  password_wo_version = var.admin_user_password_wo_version
+  user_name           = try(var.admin_user.name, null)
+  password_wo         = var.admin_user_password
+  password_wo_version = try(var.admin_user.password_version, null)
 
   # Storage configuration
-  volume_type       = var.volume_type
-  volume_size_in_gb = var.volume_size_in_gb
+  volume_type       = var.volume.type
+  volume_size_in_gb = var.volume.size_in_gb
 
   # Security - encryption at rest
   encryption_at_rest = var.encryption_at_rest
 
   # Backup configuration
-  disable_backup            = !var.backup_enabled
-  backup_schedule_frequency = var.backup_enabled ? var.backup_schedule_frequency : null
-  backup_schedule_retention = var.backup_enabled ? var.backup_schedule_retention : null
-  backup_same_region        = var.backup_enabled ? var.backup_same_region : null
+  disable_backup            = !var.backup.enabled
+  backup_schedule_frequency = var.backup.enabled ? var.backup.frequency_hours : null
+  backup_schedule_retention = var.backup.enabled ? var.backup.retention_days : null
+  backup_same_region        = var.backup.enabled ? var.backup.same_region : null
 
   # Engine settings
   settings      = var.settings
   init_settings = var.init_settings
 
-  # Public endpoint of a clone: without this block the provider deletes the one
-  # created by the clone, leaving no endpoint when private_network is not set
+  # Public endpoint: kept for a clone (without this block the provider deletes the
+  # one created by the clone) and opt-in next to a private network
   dynamic "load_balancer" {
-    for_each = var.clone_from != null && var.private_network == null ? [1] : []
+    for_each = (var.clone_from != null && var.private_network == null) || var.public_endpoint ? [1] : []
     content {}
   }
 
@@ -64,39 +63,28 @@ resource "scaleway_rdb_instance" "this" {
     }
   }
 
-  # Tags - convert map to Scaleway format
-  tags = local.tags_list
+  tags = distinct(var.tags)
 
   # Lifecycle rules
   lifecycle {
-    # Prevent accidental destruction in production
-    # NOTE: Set to true manually for production - cannot be variable due to Terraform limitation
-    prevent_destroy = false
-
-    # Validate project configuration
-    precondition {
-      condition = (
-        var.project_id != null ||
-        (var.organization_id != null && var.project_name != null) ||
-        (var.project_id == null && var.organization_id == null && var.project_name == null)
-      )
-      error_message = "Either provide project_id directly, or both organization_id and project_name for lookup, or none to use provider default."
-    }
-
     # Validate volume size for block storage
     precondition {
-      condition = var.volume_type == "lssd" || (
-        var.volume_size_in_gb != null && var.volume_size_in_gb % 5 == 0
+      condition = var.volume.type == "lssd" || (
+        var.volume.size_in_gb != null && var.volume.size_in_gb % 5 == 0
       )
-      error_message = "volume_size_in_gb must be set and be a multiple of 5 when using sbs_5k or sbs_15k volume_type."
+      error_message = "volume.size_in_gb must be set and be a multiple of 5 when using sbs_5k or sbs_15k volume.type."
     }
 
     # Validate admin user configuration
     precondition {
-      condition = var.admin_user_name == null ? (
-        var.admin_user_password == null && var.admin_user_password_wo == null
-      ) : (var.admin_user_password == null) != (var.admin_user_password_wo == null)
-      error_message = "admin_user_name must be set together with exactly one of admin_user_password or admin_user_password_wo, or none of them."
+      condition     = (var.admin_user == null) == (var.admin_user_password == null)
+      error_message = "admin_user and admin_user_password must be set together, or both be null."
+    }
+
+    # Without a private network the instance is always public
+    precondition {
+      condition     = !var.public_endpoint || var.private_network != null
+      error_message = "public_endpoint requires private_network: an instance without one is always public."
     }
 
     # Validate engine source
@@ -107,21 +95,19 @@ resource "scaleway_rdb_instance" "this" {
 
     # A clone keeps the users of its source
     precondition {
-      condition = var.clone_from == null || (
-        var.admin_user_name == null && var.admin_user_password == null && var.admin_user_password_wo == null
-      )
-      error_message = "admin_user_name and the admin password cannot be set with clone_from: the clone keeps the users of its source."
+      condition     = var.clone_from == null || (var.admin_user == null && var.admin_user_password == null)
+      error_message = "admin_user and admin_user_password cannot be set with clone_from: the clone keeps the users of its source."
     }
 
     # The provider does not apply these at clone time: they must equal the source
     precondition {
       condition = var.clone_from == null || (
-        var.volume_type == one(data.scaleway_rdb_instance.source[*].volume_type) &&
-        (var.volume_type == "lssd" || var.volume_size_in_gb == one(data.scaleway_rdb_instance.source[*].volume_size_in_gb)) &&
+        var.volume.type == one(data.scaleway_rdb_instance.source[*].volume_type) &&
+        (var.volume.type == "lssd" || var.volume.size_in_gb == one(data.scaleway_rdb_instance.source[*].volume_size_in_gb)) &&
         var.encryption_at_rest == one(data.scaleway_rdb_instance.source[*].encryption_at_rest) &&
         var.init_settings == one(data.scaleway_rdb_instance.source[*].init_settings)
       )
-      error_message = "With clone_from, volume_type, volume_size_in_gb (block storage), encryption_at_rest and init_settings must match the source instance."
+      error_message = "With clone_from, volume.type, volume.size_in_gb (block storage), encryption_at_rest and init_settings must match the source instance."
     }
 
     # The default is_ha_cluster = false would ask the provider to switch HA off on the clone
@@ -171,11 +157,17 @@ resource "scaleway_rdb_user" "this" {
 
   instance_id         = scaleway_rdb_instance.this.id
   name                = each.value.name
-  password            = each.value.password
-  password_wo         = each.value.password_wo
-  password_wo_version = each.value.password_wo_version
+  password_wo         = var.user_passwords[each.key]
+  password_wo_version = each.value.password_version
   is_admin            = each.value.is_admin
   region              = var.region
+
+  lifecycle {
+    precondition {
+      condition     = contains(keys(var.user_passwords), each.key)
+      error_message = "Every key of users needs a password in user_passwords."
+    }
+  }
 }
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗

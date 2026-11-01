@@ -6,56 +6,15 @@
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 
 # ==============================================================================
-# Organization & Project Configuration
+# Project Configuration
 # ==============================================================================
-
-variable "organization_id" {
-  description = <<-EOT
-    Scaleway Organization ID.
-
-    Required when using project_name to look up the project.
-    The organization is the top-level entity in Scaleway's hierarchy.
-    Find this in the Scaleway Console under Organization Settings.
-
-    Format: UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
-  EOT
-  type        = string
-  default     = null
-
-  validation {
-    condition     = var.organization_id == null || can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", var.organization_id))
-    error_message = "Organization ID must be a valid UUID format."
-  }
-}
-
-variable "project_name" {
-  description = <<-EOT
-    Scaleway Project name where resources will be created.
-
-    Use this with organization_id to look up the project by name.
-    The project ID will be automatically resolved from this name.
-
-    Naming rules:
-    - Must start with a lowercase letter
-    - Can contain lowercase letters, numbers, and hyphens
-    - Must be 1-63 characters long
-  EOT
-  type        = string
-  default     = null
-
-  validation {
-    condition     = var.project_name == null || can(regex("^[a-z][a-z0-9-]{0,61}[a-z0-9]$", var.project_name)) || (var.project_name != null && length(var.project_name) == 1 && can(regex("^[a-z]$", var.project_name)))
-    error_message = "Project name must be lowercase alphanumeric with hyphens, start with a letter, and be 1-63 characters."
-  }
-}
 
 variable "project_id" {
   description = <<-EOT
     Scaleway Project ID where the RDB instance will be created.
 
-    Either provide project_id directly, or use organization_id + project_name
-    to look up the project. If neither is provided, uses the default project
-    from provider configuration.
+    Leave null to use the default project of the provider configuration.
+    The project of the instance is exposed by the project_id output.
 
     Format: UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
   EOT
@@ -151,12 +110,13 @@ variable "clone_from" {
 
     Rules:
     - Leave engine null: the clone has the engine of the source.
-    - Leave admin_user_name and the admin passwords null: the clone keeps the users of the source.
-    - volume_type, volume_size_in_gb (block storage), encryption_at_rest and init_settings are not
+    - Leave admin_user and admin_user_password null: the clone keeps the users of the source.
+    - volume.type, volume.size_in_gb (block storage), encryption_at_rest and init_settings are not
       applied at clone time and must equal the source values (checked at plan time).
     - A high-availability source needs is_ha_cluster = true.
     - project_id is not applied: the clone stays in the project of the source.
-    - Without private_network the clone keeps the public endpoint created by the clone.
+    - Without private_network the clone keeps the public endpoint created by the clone;
+      with it the clone is private unless public_endpoint is true.
 
     WARNING: Setting this value on an existing instance will recreate the instance.
 
@@ -207,42 +167,31 @@ variable "is_ha_cluster" {
   default     = false
 }
 
-variable "volume_type" {
+variable "volume" {
   description = <<-EOT
-    Type of storage volume for the database.
+    Storage volume of the database.
 
-    Available types:
-    - lssd: Local SSD (fastest, default)
-    - sbs_5k: Block Storage with 5,000 IOPS (scalable, requires volume_size_in_gb)
-    - sbs_15k: Block Storage with 15,000 IOPS (scalable, requires volume_size_in_gb)
+    - type: lssd (local SSD, fastest, default), sbs_5k or sbs_15k (block
+      storage with 5,000 or 15,000 IOPS)
+    - size_in_gb: 5 to 10000. Required for sbs_5k and sbs_15k, in multiples of 5
 
-    Note: sbs_5k and sbs_15k require volume_size_in_gb to be set.
     Note: bssd is deprecated and no longer supported by Scaleway.
+
+    Example: { type = "sbs_5k", size_in_gb = 100 }
   EOT
-  type        = string
-  default     = "lssd"
+  type = object({
+    type       = optional(string, "lssd")
+    size_in_gb = optional(number)
+  })
+  default = {}
 
   validation {
-    condition     = contains(["lssd", "sbs_5k", "sbs_15k"], var.volume_type)
+    condition     = contains(["lssd", "sbs_5k", "sbs_15k"], var.volume.type)
     error_message = "Volume type must be one of: lssd, sbs_5k, sbs_15k. Note: bssd is deprecated."
   }
-}
-
-variable "volume_size_in_gb" {
-  description = <<-EOT
-    Size of the storage volume in gigabytes.
-
-    Required for sbs_5k and sbs_15k volume types.
-    Must be a multiple of 5 for block storage types.
-
-    Minimum: 5 GB
-    Maximum: Varies by node type
-  EOT
-  type        = number
-  default     = null
 
   validation {
-    condition     = var.volume_size_in_gb == null || (var.volume_size_in_gb >= 5 && var.volume_size_in_gb <= 10000)
+    condition     = var.volume.size_in_gb == null || (var.volume.size_in_gb >= 5 && var.volume.size_in_gb <= 10000)
     error_message = "Volume size must be between 5 and 10000 GB."
   }
 }
@@ -251,32 +200,45 @@ variable "volume_size_in_gb" {
 # Admin User Configuration
 # ==============================================================================
 
-variable "admin_user_name" {
+variable "admin_user" {
   description = <<-EOT
-    Username for the initial admin user created with the instance.
+    Initial admin user created with the instance.
 
-    This user has full administrative privileges on the instance.
-    Leave null to skip creating an initial admin user.
+    - name: user name, with full administrative privileges on the instance
+    - password_version: version of the write-only password; bump it to apply a
+      new admin_user_password (default 1)
+
+    Set together with admin_user_password, or leave both null to skip the
+    initial admin user.
 
     Naming rules:
     - Must start with a letter
     - Can contain letters, numbers, and underscores
     - Must be 1-63 characters long
+
+    Example: { name = "admin" }
   EOT
-  type        = string
-  default     = null
+  type = object({
+    name             = string
+    password_version = optional(number, 1)
+  })
+  default = null
 
   validation {
-    condition     = var.admin_user_name == null || can(regex("^[a-zA-Z][a-zA-Z0-9_]{0,62}$", var.admin_user_name))
+    condition     = var.admin_user == null || can(regex("^[a-zA-Z][a-zA-Z0-9_]{0,62}$", var.admin_user.name))
     error_message = "Admin username must start with a letter, contain only letters, numbers, and underscores, and be 1-63 characters."
   }
 }
 
 variable "admin_user_password" {
   description = <<-EOT
-    Password for the initial admin user.
+    Password of the initial admin user (admin_user).
 
-    Required if admin_user_name is set.
+    Sent through the write-only password_wo argument: never stored in the
+    state or the plan file (OpenTofu/Terraform >= 1.11). Provide it from an
+    ephemeral source (secrets manager, ephemeral resource) or
+    TF_VAR_admin_user_password. Bump admin_user.password_version to apply a
+    new value.
 
     Password requirements:
     - 8 to 128 characters
@@ -288,6 +250,7 @@ variable "admin_user_password" {
   type        = string
   default     = null
   sensitive   = true
+  ephemeral   = true
 
   validation {
     condition = var.admin_user_password == null || (
@@ -300,39 +263,6 @@ variable "admin_user_password" {
     )
     error_message = "Password must be 8-128 characters with at least one uppercase, lowercase, digit, and special character."
   }
-}
-
-variable "admin_user_password_wo" {
-  description = <<-EOT
-    Write-only alternative to admin_user_password: never stored in the
-    Terraform state or the plan file (requires OpenTofu/Terraform >= 1.11).
-    Not exposed by the admin_password and connection_string outputs.
-
-    Same requirements as admin_user_password. Bump
-    admin_user_password_wo_version to apply a new value.
-  EOT
-  type        = string
-  default     = null
-  sensitive   = true
-  ephemeral   = true
-
-  validation {
-    condition = var.admin_user_password_wo == null || (
-      length(var.admin_user_password_wo) >= 8 &&
-      length(var.admin_user_password_wo) <= 128 &&
-      can(regex("[A-Z]", var.admin_user_password_wo)) &&
-      can(regex("[a-z]", var.admin_user_password_wo)) &&
-      can(regex("[0-9]", var.admin_user_password_wo)) &&
-      can(regex("[!@#$%^&*()_+\\-=\\[\\]{}|;:,.<>?]", var.admin_user_password_wo))
-    )
-    error_message = "Password must be 8-128 characters with at least one uppercase, lowercase, digit, and special character."
-  }
-}
-
-variable "admin_user_password_wo_version" {
-  description = "Version of admin_user_password_wo. Change it to apply a new write-only password."
-  type        = number
-  default     = null
 }
 
 # ==============================================================================
@@ -359,66 +289,37 @@ variable "encryption_at_rest" {
 # Backup Configuration
 # ==============================================================================
 
-variable "backup_enabled" {
+variable "backup" {
   description = <<-EOT
-    Enable automated backups.
+    Automated backup settings.
 
-    When enabled, automatic backups are created according to the
-    backup_schedule_frequency setting.
+    - enabled: create automated backups (default true, strongly recommended for production)
+    - frequency_hours: hours between backups, 1 to 168 (default 24)
+    - retention_days: days to keep backups, 1 to 365 (default 14)
+    - same_region: store backups in the region of the instance; false (default)
+      stores them in another region for geographic redundancy
 
-    Default: true (strongly recommended for production)
+    frequency_hours, retention_days and same_region apply only when enabled is true.
+
+    Example: { frequency_hours = 12, retention_days = 30 }
   EOT
-  type        = bool
-  default     = true
-}
-
-variable "backup_schedule_frequency" {
-  description = <<-EOT
-    Hours between automated backups.
-
-    Only applies when backup_enabled is true.
-
-    Range: 1 to 168 hours (1 week)
-    Default: 24 hours (daily backups)
-  EOT
-  type        = number
-  default     = 24
+  type = object({
+    enabled         = optional(bool, true)
+    frequency_hours = optional(number, 24)
+    retention_days  = optional(number, 14)
+    same_region     = optional(bool, false)
+  })
+  default = {}
 
   validation {
-    condition     = var.backup_schedule_frequency >= 1 && var.backup_schedule_frequency <= 168
+    condition     = var.backup.frequency_hours >= 1 && var.backup.frequency_hours <= 168
     error_message = "Backup frequency must be between 1 and 168 hours."
   }
-}
-
-variable "backup_schedule_retention" {
-  description = <<-EOT
-    Number of days to retain automated backups.
-
-    Only applies when backup_enabled is true.
-
-    Range: 1 to 365 days
-    Default: 14 days
-  EOT
-  type        = number
-  default     = 14
 
   validation {
-    condition     = var.backup_schedule_retention >= 1 && var.backup_schedule_retention <= 365
+    condition     = var.backup.retention_days >= 1 && var.backup.retention_days <= 365
     error_message = "Backup retention must be between 1 and 365 days."
   }
-}
-
-variable "backup_same_region" {
-  description = <<-EOT
-    Store backups in the same region as the instance.
-
-    When false (default), backups are stored in a different region
-    for geographic redundancy and disaster recovery.
-
-    Default: false (recommended for production)
-  EOT
-  type        = bool
-  default     = false
 }
 
 # ==============================================================================
@@ -509,6 +410,21 @@ variable "private_network" {
   }
 }
 
+variable "public_endpoint" {
+  description = <<-EOT
+    Keep a public endpoint next to the private network.
+
+    Only with private_network: the instance then answers on both the private
+    network and a public endpoint (reach it through acl_rules). Leave false
+    for a private-only instance. Without private_network the instance is
+    always public and this must stay false.
+
+    Default: false
+  EOT
+  type        = bool
+  default     = false
+}
+
 # ==============================================================================
 # Tags
 # ==============================================================================
@@ -517,17 +433,13 @@ variable "tags" {
   description = <<-EOT
     Tags to apply to the RDB instance (the other resources do not take tags).
 
-    Tags are key-value pairs used for resource organization and filtering.
-    They are converted to Scaleway's tag format: "key=value".
+    Scaleway tags are plain strings, by convention "key=value". Duplicates
+    are removed.
 
-    Example:
-    {
-      environment = "production"
-      team        = "platform"
-    }
+    Example: ["environment=production", "team=platform"]
   EOT
-  type        = map(string)
-  default     = {}
+  type        = list(string)
+  default     = []
 }
 
 # ==============================================================================
@@ -576,38 +488,26 @@ variable "users" {
     addressing. Users are created on the RDB instance and can be granted
     privileges on specific databases.
 
-    Set exactly one of password or password_wo. password_wo is write-only
-    (never stored in state); bump password_wo_version to change it.
-    Unlike admin_user_password_wo it cannot be ephemeral, because this map
-    is iterated with for_each: its value stays in the plan file.
-
-    Password requirements:
-    - 8 to 128 characters
-    - At least one uppercase letter
-    - At least one lowercase letter
-    - At least one digit
-    - At least one special character
+    The password of each user comes from user_passwords, under the same key.
+    password_version is the write-only version: bump it to apply a new password.
 
     Example:
     {
       app_user = {
         name     = "app_service"
-        password = "SecureP@ssw0rd!"
         is_admin = false
       }
       admin_user = {
-        name     = "dba"
-        password = "AdminP@ssw0rd!"
-        is_admin = true
+        name             = "dba"
+        is_admin         = true
+        password_version = 2
       }
     }
   EOT
   type = map(object({
-    name                = string
-    password            = optional(string)
-    password_wo         = optional(string) # write-only: never stored in state (OpenTofu/Terraform >= 1.11)
-    password_wo_version = optional(number) # bump to apply a new password_wo
-    is_admin            = optional(bool, false)
+    name             = string
+    is_admin         = optional(bool, false)
+    password_version = optional(number, 1)
   }))
   default = {}
 
@@ -617,24 +517,45 @@ variable "users" {
     ])
     error_message = "Usernames must start with a letter, contain only letters, numbers, and underscores, and be 1-63 characters."
   }
+}
+
+variable "user_passwords" {
+  description = <<-EOT
+    Passwords of the users, keyed like users.
+
+    Sent through the write-only password_wo argument: the values are never
+    stored in the state or the plan file (OpenTofu/Terraform >= 1.11). Provide
+    them from an ephemeral source (secrets manager, ephemeral resource) or
+    TF_VAR_user_passwords. Every key of users needs an entry, and every key
+    must be a key of users.
+
+    Password requirements:
+    - 8 to 128 characters
+    - At least one uppercase letter
+    - At least one lowercase letter
+    - At least one digit
+    - At least one special character (!@#$%^&*()_+-=[]{}|;:,.<>?)
+  EOT
+  type        = map(string)
+  default     = {}
+  sensitive   = true
+  ephemeral   = true
 
   validation {
-    condition     = alltrue([for k, v in var.users : (v.password == null) != (v.password_wo == null)])
-    error_message = "Each user must set exactly one of password or password_wo."
+    condition     = alltrue([for k in keys(var.user_passwords) : contains(keys(var.users), k)])
+    error_message = "user_passwords keys must be keys of users."
   }
 
   validation {
-    condition = alltrue(flatten([
-      for k, v in var.users : [
-        for p in compact([v.password, v.password_wo]) :
-        length(p) >= 8 &&
-        length(p) <= 128 &&
-        can(regex("[A-Z]", p)) &&
-        can(regex("[a-z]", p)) &&
-        can(regex("[0-9]", p)) &&
-        can(regex("[!@#$%^&*()_+\\-=\\[\\]{}|;:,.<>?]", p))
-      ]
-    ]))
+    condition = alltrue([
+      for p in values(var.user_passwords) :
+      length(p) >= 8 &&
+      length(p) <= 128 &&
+      can(regex("[A-Z]", p)) &&
+      can(regex("[a-z]", p)) &&
+      can(regex("[0-9]", p)) &&
+      can(regex("[!@#$%^&*()_+\\-=\\[\\]{}|;:,.<>?]", p))
+    ])
     error_message = "User passwords must be 8-128 characters with at least one uppercase, lowercase, digit, and special character."
   }
 }
@@ -838,7 +759,7 @@ variable "manual_backups" {
     deleted. The provider cannot remove an expiry once set.
 
     Note: Manual backups are only available for instances with
-    storage <= 585GB; a plan-time warning is raised when volume_size_in_gb
+    storage <= 585GB; a plan-time warning is raised when volume.size_in_gb
     is larger. database_name is not cross-checked against databases.
 
     Example:

@@ -5,40 +5,37 @@
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 
 # ==============================================================================
-# Project Output
+# Instance Outputs
 # ==============================================================================
 
 output "project_id" {
-  description = "The ID of the Scaleway project (resolved from project_name or provided directly)."
-  value       = local.project_id
+  description = "The ID of the Scaleway project of the instance (the provider default project when the project_id input is null)."
+  value       = scaleway_rdb_instance.this.project_id
 }
-
-# ==============================================================================
-# Instance Outputs
-# ==============================================================================
 
 output "instance_id" {
   description = "The ID of the RDB instance."
   value       = scaleway_rdb_instance.this.id
 }
 
-output "instance_name" {
-  description = "The name of the RDB instance."
-  value       = scaleway_rdb_instance.this.name
+output "instance_region" {
+  description = "The region where the RDB instance is deployed."
+  value       = scaleway_rdb_instance.this.region
 }
 
-output "instance_endpoint_ip" {
-  description = "The IP address of the RDB instance endpoint (deprecated, use connection_host instead)."
-  value       = try(scaleway_rdb_instance.this.load_balancer[0].ip, null)
+output "instance_engine" {
+  description = "The database engine and version."
+  value       = scaleway_rdb_instance.this.engine
 }
 
-output "instance_endpoint_port" {
-  description = "The port of the RDB instance endpoint (deprecated, use connection_port instead)."
-  value       = try(scaleway_rdb_instance.this.load_balancer[0].port, null)
+output "instance_certificate" {
+  description = "The PEM-encoded TLS certificate for secure connections."
+  value       = scaleway_rdb_instance.this.certificate
+  sensitive   = true
 }
 
 output "instance_load_balancer" {
-  description = "Load balancer endpoint information for the RDB instance."
+  description = "Public (load balancer) endpoint of the RDB instance, null when it has none."
   value = try({
     ip       = scaleway_rdb_instance.this.load_balancer[0].ip
     port     = scaleway_rdb_instance.this.load_balancer[0].port
@@ -48,7 +45,7 @@ output "instance_load_balancer" {
 }
 
 output "instance_private_network" {
-  description = "Private network endpoint information for the RDB instance."
+  description = "Private network endpoint of the RDB instance, null when it has none."
   value = try({
     ip       = scaleway_rdb_instance.this.private_network[0].ip
     port     = scaleway_rdb_instance.this.private_network[0].port
@@ -56,114 +53,32 @@ output "instance_private_network" {
   }, null)
 }
 
-output "instance_certificate" {
-  description = "The PEM-encoded TLS certificate for secure connections."
-  value       = scaleway_rdb_instance.this.certificate
-  sensitive   = true
+output "connection_host" {
+  description = "The IP address for database connections: the public endpoint, or the private network endpoint when there is none."
+  value       = try(scaleway_rdb_instance.this.load_balancer[0].ip, scaleway_rdb_instance.this.private_network[0].ip, null)
 }
 
-output "instance_engine" {
-  description = "The database engine and version."
-  value       = scaleway_rdb_instance.this.engine
+output "connection_port" {
+  description = "The port for database connections: the public endpoint, or the private network endpoint when there is none."
+  value       = try(scaleway_rdb_instance.this.load_balancer[0].port, scaleway_rdb_instance.this.private_network[0].port, null)
 }
 
 output "engine_type" {
   description = "The detected engine type (postgresql or mysql)."
-  value       = local.is_postgresql ? "postgresql" : local.is_mysql ? "mysql" : "unknown"
+  value       = local.is_postgresql ? "postgresql" : "mysql"
 }
 
 output "engine_default_port" {
   description = "The default port for the database engine (5432 for PostgreSQL, 3306 for MySQL)."
-  value       = local.default_port
-}
-
-output "instance_is_ha_cluster" {
-  description = "Whether the instance is a high availability cluster."
-  value       = scaleway_rdb_instance.this.is_ha_cluster
-}
-
-output "instance_node_type" {
-  description = "The node type of the RDB instance."
-  value       = scaleway_rdb_instance.this.node_type
-}
-
-output "instance_region" {
-  description = "The region where the RDB instance is deployed."
-  value       = scaleway_rdb_instance.this.region
-}
-
-# ==============================================================================
-# Admin Password Output
-# ==============================================================================
-
-output "admin_password" {
-  description = <<-EOT
-    The admin user password.
-
-    Returns admin_user_password if it was set, otherwise the password
-    attribute of the instance. It is null when admin_user_password_wo is
-    used (write-only values are never stored) or no admin user is set.
-
-    WARNING: This is sensitive data - handle with care.
-  EOT
-  value       = var.admin_user_password != null ? var.admin_user_password : try(scaleway_rdb_instance.this.password, null)
-  sensitive   = true
-}
-
-# ==============================================================================
-# Connection Strings
-# ==============================================================================
-
-output "connection_string" {
-  description = <<-EOT
-    Database connection string.
-
-    For PostgreSQL: postgres://user:password@host:port/database?sslmode=require
-    For MySQL: mysql://user:password@host:port/database
-
-    Note: This output requires admin_user_name and admin_user_password
-    (null when using admin_user_password_wo).
-  EOT
-  value = var.admin_user_name != null && var.admin_user_password != null ? (
-    local.is_postgresql ? format(
-      "postgres://%s:%s@%s:%d/%s?sslmode=require",
-      var.admin_user_name,
-      var.admin_user_password,
-      try(scaleway_rdb_instance.this.load_balancer[0].ip, ""),
-      try(scaleway_rdb_instance.this.load_balancer[0].port, 0),
-      "postgres"
-      ) : format(
-      "mysql://%s:%s@%s:%d",
-      var.admin_user_name,
-      var.admin_user_password,
-      try(scaleway_rdb_instance.this.load_balancer[0].ip, ""),
-      try(scaleway_rdb_instance.this.load_balancer[0].port, 0)
-    )
-  ) : null
-  sensitive = true
-}
-
-output "connection_host" {
-  description = "The hostname or IP address for database connections."
-  value       = try(scaleway_rdb_instance.this.load_balancer[0].ip, null)
-}
-
-output "connection_port" {
-  description = "The port for database connections."
-  value       = try(scaleway_rdb_instance.this.load_balancer[0].port, null)
+  value       = local.is_postgresql ? 5432 : 3306
 }
 
 # ==============================================================================
 # Database Outputs
 # ==============================================================================
 
-output "database_ids" {
-  description = "Map of database keys to their IDs."
-  value       = local.database_ids
-}
-
 output "databases" {
-  description = "Map of database keys to their full details."
+  description = "Map of database keys to their details."
   value = {
     for k, v in scaleway_rdb_database.this : k => {
       id          = v.id
@@ -180,16 +95,15 @@ output "databases" {
 # User Outputs
 # ==============================================================================
 
-output "user_names" {
-  description = "Map of user keys to their usernames (passwords not exposed)."
-  value = {
-    for k, v in scaleway_rdb_user.this : k => v.name
-  }
-}
-
 output "users" {
   description = "Map of user keys to their details (passwords not exposed)."
-  value       = local.user_info
+  value = {
+    for k, v in scaleway_rdb_user.this : k => {
+      id       = v.id
+      name     = v.name
+      is_admin = var.users[k].is_admin
+    }
+  }
 }
 
 # ==============================================================================
@@ -213,22 +127,8 @@ output "privileges" {
 # ==============================================================================
 
 output "acl_id" {
-  description = "The ID of the ACL resource."
+  description = "The ID of the ACL resource, null when there are no acl_rules."
   value       = try(scaleway_rdb_acl.this[0].id, null)
-}
-
-output "acl_rules" {
-  description = "The ACL rules applied to the instance."
-  value       = try(scaleway_rdb_acl.this[0].acl_rules, [])
-}
-
-# ==============================================================================
-# Read Replica Outputs
-# ==============================================================================
-
-output "read_replicas" {
-  description = "Map of read replica keys to their endpoint information."
-  value       = local.read_replica_endpoints
 }
 
 # ==============================================================================
@@ -252,15 +152,24 @@ output "manual_backups" {
 }
 
 # ==============================================================================
-# Security Outputs
+# Read Replica Outputs
 # ==============================================================================
 
-output "encryption_at_rest_enabled" {
-  description = "Whether encryption at rest is enabled."
-  value       = var.encryption_at_rest
-}
-
-output "backup_enabled" {
-  description = "Whether automated backups are enabled."
-  value       = var.backup_enabled
+output "read_replicas" {
+  description = "Map of read replica keys to their endpoint information (ip, port and hostname)."
+  value = {
+    for k, v in scaleway_rdb_read_replica.this : k => {
+      id = v.id
+      direct_access = try({
+        ip       = v.direct_access[0].ip
+        port     = v.direct_access[0].port
+        hostname = v.direct_access[0].hostname
+      }, null)
+      private_network = try({
+        ip       = v.private_network[0].ip
+        port     = v.private_network[0].port
+        hostname = v.private_network[0].hostname
+      }, null)
+    }
+  }
 }

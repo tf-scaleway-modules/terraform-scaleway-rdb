@@ -17,8 +17,8 @@ check "acl_wide_ranges" {
 check "manual_backup_volume_size" {
   assert {
     condition = length(var.manual_backups) == 0 || (
-      var.volume_size_in_gb == null || var.volume_size_in_gb <= 585
+      var.volume.size_in_gb == null || var.volume.size_in_gb <= 585
     )
-    error_message = "Manual backups are only available for instances with storage up to 585 GB; volume_size_in_gb is larger."
+    error_message = "Manual backups are only available for instances with storage up to 585 GB; volume.size_in_gb is larger."
   }
 }

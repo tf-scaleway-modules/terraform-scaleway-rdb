@@ -27,17 +27,19 @@ module "database" {
   region    = "fr-par"
 
   # Admin user
-  admin_user_name     = "admin"
+  admin_user          = { name = "admin" }
   admin_user_password = var.admin_password
 
   # Security defaults (already enabled by default, shown for clarity)
   encryption_at_rest = true
-  backup_enabled     = true
 
   # Backup configuration
-  backup_schedule_frequency = 24 # Daily backups
-  backup_schedule_retention = 14 # Keep for 2 weeks
-  backup_same_region        = false
+  backup = {
+    enabled         = true
+    frequency_hours = 24 # Daily backups
+    retention_days  = 14 # Keep for 2 weeks
+    same_region     = false
+  }
 
   # Create a database
   databases = {
@@ -50,9 +52,13 @@ module "database" {
   users = {
     app = {
       name     = "app_user"
-      password = var.app_user_password
       is_admin = false
     }
+  }
+
+  # Passwords of the users, keyed like users (write-only, never stored in state)
+  user_passwords = {
+    app = var.app_user_password
   }
 
   # Grant permissions
@@ -73,10 +79,7 @@ module "database" {
   }
 
   # Tags
-  tags = {
-    environment = "development"
-    managed_by  = "terraform"
-  }
+  tags = ["environment=development", "managed_by=terraform"]
 }
 
 # ==============================================================================
@@ -84,15 +87,17 @@ module "database" {
 # ==============================================================================
 
 variable "admin_password" {
-  description = "Password for the admin user (8-128 chars, uppercase, lowercase, digit, special char)"
+  description = "Password for the admin user (8-128 chars, uppercase, lowercase, digit, special char; set TF_VAR_admin_password, never stored in state or plan)"
   type        = string
   sensitive   = true
+  ephemeral   = true
 }
 
 variable "app_user_password" {
-  description = "Password for the application user"
+  description = "Password for the application user (set TF_VAR_app_user_password, never stored in state or plan)"
   type        = string
   sensitive   = true
+  ephemeral   = true
 }
 
 variable "allowed_ip" {
