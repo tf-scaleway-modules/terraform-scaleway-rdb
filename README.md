@@ -9,7 +9,8 @@ A **production-ready** Terraform/OpenTofu module for managing Scaleway Relationa
 ## Features
 
 - **Full RDB Resource Support**: Instance, databases, users, privileges, ACLs, read replicas, and backups
-- **Security-First Design**: Encryption at rest enabled by default, restrictive ACL validation, sensitive data protection
+- **Security-First Design**: Encryption at rest enabled by default, restrictive ACL validation, write-only ephemeral passwords that never reach the state or the plan
+- **Private or Hybrid Access**: Public, private-only, or private network plus an opt-in public endpoint (`public_endpoint`)
 - **High Availability**: Built-in support for HA clusters with automatic failover
 - **Flexible Configuration**: Map-based resources for multiple databases, users, and privileges
 - **Comprehensive Validation**: Input validation for all critical fields (UUIDs, CIDRs, passwords, naming conventions)
@@ -35,8 +36,8 @@ module "database" {
   region    = "fr-par"
 
   # Admin user
-  admin_user_name     = "admin"
-  admin_user_password = var.admin_password
+  admin_user          = { name = "admin" }
+  admin_user_password = var.admin_password # ephemeral variable, never stored in state
 
   # Create a database
   databases = {
@@ -45,13 +46,15 @@ module "database" {
     }
   }
 
-  # Create a user
+  # Create a user; its password comes from user_passwords (same key)
   users = {
     app = {
       name     = "app_user"
-      password = var.app_password
       is_admin = false
     }
+  }
+  user_passwords = {
+    app = var.app_password # ephemeral variable
   }
 
   # Grant privileges
@@ -71,11 +74,12 @@ module "database" {
     }
   }
 
-  tags = {
-    environment = "production"
-  }
+  tags = ["environment=production"]
 }
 ```
+
+`admin_user_password` and `user_passwords` are ephemeral inputs: declare the variables you pass to them
+with `sensitive = true` and `ephemeral = true`.
 
 ### Production HA Setup
 
@@ -90,20 +94,20 @@ module "production_db" {
   is_ha_cluster = true
 
   # Block storage for scalability
-  volume_type       = "sbs_5k"
-  volume_size_in_gb = 100
+  volume = { type = "sbs_5k", size_in_gb = 100 }
 
   # Security (defaults, shown for clarity)
   encryption_at_rest = true
 
   # Backup configuration
-  backup_enabled            = true
-  backup_schedule_frequency = 12  # Every 12 hours
-  backup_schedule_retention = 30  # 30 days
-  backup_same_region        = false  # Geographic redundancy
+  backup = {
+    frequency_hours = 12 # Every 12 hours
+    retention_days  = 30 # 30 days
+    same_region     = false # Geographic redundancy
+  }
 
   # Admin user
-  admin_user_name     = "admin"
+  admin_user          = { name = "admin" }
   admin_user_password = var.admin_password
 
   # Multiple databases
@@ -114,9 +118,14 @@ module "production_db" {
 
   # Multiple users with different roles
   users = {
-    app       = { name = "app_service", password = var.app_password, is_admin = false }
-    readonly  = { name = "readonly_user", password = var.readonly_password, is_admin = false }
-    analytics = { name = "analytics_service", password = var.analytics_password, is_admin = false }
+    app       = { name = "app_service" }
+    readonly  = { name = "readonly_user" }
+    analytics = { name = "analytics_service" }
+  }
+  user_passwords = {
+    app       = var.app_password
+    readonly  = var.readonly_password
+    analytics = var.analytics_password
   }
 
   # Granular privileges
@@ -141,12 +150,22 @@ module "production_db" {
     }
   }
 
-  tags = {
-    environment = "production"
-    team        = "platform"
-  }
+  tags = ["environment=production", "team=platform"]
 }
 ```
+
+### Private network with a public endpoint
+
+With `private_network`, the instance is private only. Set `public_endpoint = true` to keep a public
+endpoint next to it and restrict who may use it with `acl_rules`:
+
+```hcl
+  private_network = { pn_id = scaleway_vpc_private_network.this.id, enable_ipam = true }
+  public_endpoint = true
+  acl_rules       = { office = { ip = "203.0.113.0/24", description = "Office network" } }
+```
+
+`connection_host` and `connection_port` return the public endpoint, or the private one when there is none.
 
 ### Clone an instance
 
@@ -166,12 +185,12 @@ module "staging" {
 
 - Inherited: engine, databases, users and permissions of the source. Declare in `databases`,
   `users` and `privileges` only new entries; an existing name fails at apply with an API conflict.
-- Must match the source (checked at plan time): `volume_type`, `volume_size_in_gb` (block storage),
+- Must match the source (checked at plan time): `volume.type`, `volume.size_in_gb` (block storage),
   `encryption_at_rest`, `init_settings`. A high-availability source needs `is_ha_cluster = true`.
-- Not allowed: `engine`, `admin_user_name` and the admin passwords (the clone takes no password; the
-  `admin_password` and `connection_string` outputs are `null`).
+- Not allowed: `engine`, `admin_user` and `admin_user_password` (the clone takes no password).
 - `project_id` is not applied: the clone stays in the project of the source.
-- Without `private_network` the clone keeps its public endpoint; with it, the clone is private only.
+- Without `private_network` the clone keeps its public endpoint; with it, the clone is private only
+  unless `public_endpoint = true`.
 - Setting `clone_from` on an existing instance **replaces** it.
 
 ### Engine upgrade
@@ -181,12 +200,28 @@ Changing `engine` of an existing instance runs a blue/green upgrade in the provi
 second apply because it uses the instance ID, and the apply must never be re-run while an upgrade is
 in progress.
 
-### Upgrading to v2.0.0
+### Upgrading from v2 to v3
 
-The provider floor is raised from `~> 2.86` to `~> 2.89` because `clone_from` needs provider 2.89.0.
-Run `tofu init -upgrade` (or `terraform init -upgrade`) to refresh the lock file. No input, output or
-resource address is removed or renamed; `engine` is now optional (exactly one of `engine` and
-`clone_from` is set) and the instance update timeout is 60 minutes instead of 30.
+v3 removes the legacy input shapes. Run `tofu init -upgrade`; the provider floor (`~> 2.89`) and
+`required_version` (`>= 1.11`) are unchanged. No resource address changes, so no `moved` block and no
+replacement: the first apply updates the instance and each user in place to the write-only password form.
+
+| v2 | v3 |
+|----|----|
+| `organization_id`, `project_name` | removed: use `project_id` (`null` = default project of the provider) |
+| `admin_user_name`, `admin_user_password`, `admin_user_password_wo`, `admin_user_password_wo_version` | `admin_user = { name, password_version }` and the ephemeral `admin_user_password` |
+| `users[*].password`, `password_wo`, `password_wo_version` | `users[k] = { name, is_admin, password_version }` and `user_passwords = { k = <ephemeral value> }` |
+| `volume_type`, `volume_size_in_gb` | `volume = { type, size_in_gb }` |
+| `backup_enabled`, `backup_schedule_frequency`, `backup_schedule_retention`, `backup_same_region` | `backup = { enabled, frequency_hours, retention_days, same_region }` |
+| `tags = { environment = "production" }` | `tags = ["environment=production"]` (`[for k, v in old : "${k}=${v}"]`) |
+| outputs `admin_password`, `connection_string` | removed (always `null` with write-only passwords): build the URL from `connection_host`, `connection_port` and your secret |
+| outputs `instance_endpoint_ip`, `instance_endpoint_port` | `connection_host`, `connection_port` |
+| outputs `instance_name`, `instance_node_type`, `instance_is_ha_cluster`, `encryption_at_rest_enabled`, `backup_enabled` | removed: use your own inputs |
+| outputs `database_ids`, `user_names`, `acl_rules` | `databases[k].id`, `users[k].name`, your own `acl_rules` input |
+
+New: `public_endpoint` (public endpoint next to a private network), the replica `hostname` in
+`read_replicas`, and `connection_host`/`connection_port` falling back to the private endpoint. Rotating a
+password now means bumping `admin_user.password_version` or `users[k].password_version`.
 
 ## Examples
 
@@ -217,11 +252,10 @@ The module validates ACL rules to prevent accidental public exposure:
 
 ### Sensitive Data Protection
 
-- All password variables are marked as `sensitive`
-- Connection strings and certificates are marked as `sensitive` in outputs
-- User passwords are never exposed in outputs
-- Write-only passwords (`admin_user_password_wo`, `users[*].password_wo`) are never stored in the state (OpenTofu/Terraform >= 1.11); bump the matching `*_wo_version` to rotate them
-- `admin_user_password_wo` is also ephemeral (absent from the plan file); `users[*].password_wo` cannot be, see [SECURITY.md](SECURITY.md) for what lands in state
+- `admin_user_password` and `user_passwords` are `sensitive` and `ephemeral`: sent through the write-only `password_wo` arguments, they land neither in the state nor in the plan file (OpenTofu/Terraform >= 1.11)
+- Bump `admin_user.password_version` or `users[*].password_version` to rotate a password
+- The certificate output is `sensitive`; no output carries a password
+- See [SECURITY.md](SECURITY.md) for what lands in state
 
 ## Supported Resources
 
@@ -275,7 +309,6 @@ No modules.
 | [scaleway_rdb_privilege.this](https://registry.terraform.io/providers/scaleway/scaleway/latest/docs/resources/rdb_privilege) | resource |
 | [scaleway_rdb_read_replica.this](https://registry.terraform.io/providers/scaleway/scaleway/latest/docs/resources/rdb_read_replica) | resource |
 | [scaleway_rdb_user.this](https://registry.terraform.io/providers/scaleway/scaleway/latest/docs/resources/rdb_user) | resource |
-| [scaleway_account_project.this](https://registry.terraform.io/providers/scaleway/scaleway/latest/docs/data-sources/account_project) | data source |
 | [scaleway_rdb_instance.source](https://registry.terraform.io/providers/scaleway/scaleway/latest/docs/data-sources/rdb_instance) | data source |
 
 ## Inputs
@@ -283,70 +316,52 @@ No modules.
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | <a name="input_acl_rules"></a> [acl\_rules](#input\_acl\_rules) | Map of ACL rules to control network access to the RDB instance.<br/><br/>ACL rules define which IP addresses or CIDR ranges can connect<br/>to the database. By default, Scaleway allows all IPs (0.0.0.0/0).<br/>This module requires explicit ACL rules for security.<br/><br/>SECURITY: Do not use 0.0.0.0/0 in production unless absolutely<br/>necessary. Use specific IP ranges or private networks instead.<br/>0.0.0.0/0 is rejected unless allow\_public\_access is true; other very<br/>wide ranges (prefix shorter than /8, such as 0.0.0.0/1) only raise a<br/>plan-time warning. The Scaleway API does not support IPv6 ACL rules.<br/><br/>Example:<br/>{<br/>  office = {<br/>    ip          = "203.0.113.0/24"<br/>    description = "Office network"<br/>  }<br/>  vpn = {<br/>    ip          = "10.0.0.0/8"<br/>    description = "VPN network"<br/>  }<br/>} | <pre>map(object({<br/>    ip          = string<br/>    description = string<br/>  }))</pre> | `{}` | no |
-| <a name="input_admin_user_name"></a> [admin\_user\_name](#input\_admin\_user\_name) | Username for the initial admin user created with the instance.<br/><br/>This user has full administrative privileges on the instance.<br/>Leave null to skip creating an initial admin user.<br/><br/>Naming rules:<br/>- Must start with a letter<br/>- Can contain letters, numbers, and underscores<br/>- Must be 1-63 characters long | `string` | `null` | no |
-| <a name="input_admin_user_password"></a> [admin\_user\_password](#input\_admin\_user\_password) | Password for the initial admin user.<br/><br/>Required if admin\_user\_name is set.<br/><br/>Password requirements:<br/>- 8 to 128 characters<br/>- At least one uppercase letter<br/>- At least one lowercase letter<br/>- At least one digit<br/>- At least one special character (!@#$%^&*()\_+-=[]{}\|;:,.<>?) | `string` | `null` | no |
-| <a name="input_admin_user_password_wo"></a> [admin\_user\_password\_wo](#input\_admin\_user\_password\_wo) | Write-only alternative to admin\_user\_password: never stored in the<br/>Terraform state or the plan file (requires OpenTofu/Terraform >= 1.11).<br/>Not exposed by the admin\_password and connection\_string outputs.<br/><br/>Same requirements as admin\_user\_password. Bump<br/>admin\_user\_password\_wo\_version to apply a new value. | `string` | `null` | no |
-| <a name="input_admin_user_password_wo_version"></a> [admin\_user\_password\_wo\_version](#input\_admin\_user\_password\_wo\_version) | Version of admin\_user\_password\_wo. Change it to apply a new write-only password. | `number` | `null` | no |
+| <a name="input_admin_user"></a> [admin\_user](#input\_admin\_user) | Initial admin user created with the instance.<br/><br/>- name: user name, with full administrative privileges on the instance<br/>- password\_version: version of the write-only password; bump it to apply a<br/>  new admin\_user\_password (default 1)<br/><br/>Set together with admin\_user\_password, or leave both null to skip the<br/>initial admin user.<br/><br/>Naming rules:<br/>- Must start with a letter<br/>- Can contain letters, numbers, and underscores<br/>- Must be 1-63 characters long<br/><br/>Example: { name = "admin" } | <pre>object({<br/>    name             = string<br/>    password_version = optional(number, 1)<br/>  })</pre> | `null` | no |
+| <a name="input_admin_user_password"></a> [admin\_user\_password](#input\_admin\_user\_password) | Password of the initial admin user (admin\_user).<br/><br/>Sent through the write-only password\_wo argument: never stored in the<br/>state or the plan file (OpenTofu/Terraform >= 1.11). Provide it from an<br/>ephemeral source (secrets manager, ephemeral resource) or<br/>TF\_VAR\_admin\_user\_password. Bump admin\_user.password\_version to apply a<br/>new value.<br/><br/>Password requirements:<br/>- 8 to 128 characters<br/>- At least one uppercase letter<br/>- At least one lowercase letter<br/>- At least one digit<br/>- At least one special character (!@#$%^&*()\_+-=[]{}\|;:,.<>?) | `string` | `null` | no |
 | <a name="input_allow_public_access"></a> [allow\_public\_access](#input\_allow\_public\_access) | Allow unrestricted public access (0.0.0.0/0) in ACL rules and silence<br/>the warning about other very wide ranges.<br/><br/>This is a safety flag to prevent accidental exposure of the database<br/>to the public internet. Set to true only if you understand the<br/>security implications.<br/><br/>WARNING: Enabling public access exposes your database to the internet.<br/>Consider using private networks or specific IP allowlists instead.<br/><br/>Default: false | `bool` | `false` | no |
-| <a name="input_backup_enabled"></a> [backup\_enabled](#input\_backup\_enabled) | Enable automated backups.<br/><br/>When enabled, automatic backups are created according to the<br/>backup\_schedule\_frequency setting.<br/><br/>Default: true (strongly recommended for production) | `bool` | `true` | no |
-| <a name="input_backup_same_region"></a> [backup\_same\_region](#input\_backup\_same\_region) | Store backups in the same region as the instance.<br/><br/>When false (default), backups are stored in a different region<br/>for geographic redundancy and disaster recovery.<br/><br/>Default: false (recommended for production) | `bool` | `false` | no |
-| <a name="input_backup_schedule_frequency"></a> [backup\_schedule\_frequency](#input\_backup\_schedule\_frequency) | Hours between automated backups.<br/><br/>Only applies when backup\_enabled is true.<br/><br/>Range: 1 to 168 hours (1 week)<br/>Default: 24 hours (daily backups) | `number` | `24` | no |
-| <a name="input_backup_schedule_retention"></a> [backup\_schedule\_retention](#input\_backup\_schedule\_retention) | Number of days to retain automated backups.<br/><br/>Only applies when backup\_enabled is true.<br/><br/>Range: 1 to 365 days<br/>Default: 14 days | `number` | `14` | no |
-| <a name="input_clone_from"></a> [clone\_from](#input\_clone\_from) | Create the instance as a clone of an existing Database Instance.<br/><br/>Accepts the instance UUID or <region>/<UUID>. The clone keeps the databases, users and<br/>permissions of the source; declare in databases, users and privileges only new ones<br/>(an existing name fails at apply with an API conflict). Provider 2.89.0 or later.<br/><br/>Rules:<br/>- Leave engine null: the clone has the engine of the source.<br/>- Leave admin\_user\_name and the admin passwords null: the clone keeps the users of the source.<br/>- volume\_type, volume\_size\_in\_gb (block storage), encryption\_at\_rest and init\_settings are not<br/>  applied at clone time and must equal the source values (checked at plan time).<br/>- A high-availability source needs is\_ha\_cluster = true.<br/>- project\_id is not applied: the clone stays in the project of the source.<br/>- Without private\_network the clone keeps the public endpoint created by the clone.<br/><br/>WARNING: Setting this value on an existing instance will recreate the instance.<br/><br/>Example: "fr-par/11111111-2222-3333-4444-555555555555" | `string` | `null` | no |
+| <a name="input_backup"></a> [backup](#input\_backup) | Automated backup settings.<br/><br/>- enabled: create automated backups (default true, strongly recommended for production)<br/>- frequency\_hours: hours between backups, 1 to 168 (default 24)<br/>- retention\_days: days to keep backups, 1 to 365 (default 14)<br/>- same\_region: store backups in the region of the instance; false (default)<br/>  stores them in another region for geographic redundancy<br/><br/>frequency\_hours, retention\_days and same\_region apply only when enabled is true.<br/><br/>Example: { frequency\_hours = 12, retention\_days = 30 } | <pre>object({<br/>    enabled         = optional(bool, true)<br/>    frequency_hours = optional(number, 24)<br/>    retention_days  = optional(number, 14)<br/>    same_region     = optional(bool, false)<br/>  })</pre> | `{}` | no |
+| <a name="input_clone_from"></a> [clone\_from](#input\_clone\_from) | Create the instance as a clone of an existing Database Instance.<br/><br/>Accepts the instance UUID or <region>/<UUID>. The clone keeps the databases, users and<br/>permissions of the source; declare in databases, users and privileges only new ones<br/>(an existing name fails at apply with an API conflict). Provider 2.89.0 or later.<br/><br/>Rules:<br/>- Leave engine null: the clone has the engine of the source.<br/>- Leave admin\_user and admin\_user\_password null: the clone keeps the users of the source.<br/>- volume.type, volume.size\_in\_gb (block storage), encryption\_at\_rest and init\_settings are not<br/>  applied at clone time and must equal the source values (checked at plan time).<br/>- A high-availability source needs is\_ha\_cluster = true.<br/>- project\_id is not applied: the clone stays in the project of the source.<br/>- Without private\_network the clone keeps the public endpoint created by the clone;<br/>  with it the clone is private unless public\_endpoint is true.<br/><br/>WARNING: Setting this value on an existing instance will recreate the instance.<br/><br/>Example: "fr-par/11111111-2222-3333-4444-555555555555" | `string` | `null` | no |
 | <a name="input_databases"></a> [databases](#input\_databases) | Map of databases to create within the RDB instance.<br/><br/>Each database is identified by a unique key used for Terraform resource<br/>addressing. The 'name' field is the actual database name.<br/><br/>Example:<br/>{<br/>  app\_db = {<br/>    name = "application"<br/>  }<br/>  analytics\_db = {<br/>    name = "analytics"<br/>  }<br/>} | <pre>map(object({<br/>    name = string<br/>  }))</pre> | `{}` | no |
 | <a name="input_encryption_at_rest"></a> [encryption\_at\_rest](#input\_encryption\_at\_rest) | Enable encryption at rest using LUKS.<br/><br/>When enabled, all data, logs, and snapshots are encrypted at the<br/>storage volume level. Keys are managed by Scaleway.<br/><br/>WARNING: This setting is IRREVERSIBLE once enabled.<br/>WARNING: Initial encryption may take ~1 hour per 100GB of data.<br/><br/>Default: true (recommended for production) | `bool` | `true` | no |
 | <a name="input_engine"></a> [engine](#input\_engine) | Database engine and version.<br/><br/>Set exactly one of engine or clone\_from. With clone\_from, leave engine null:<br/>the clone has the engine of its source.<br/><br/>Supported engines:<br/>- PostgreSQL: PostgreSQL-11, PostgreSQL-12, PostgreSQL-13, PostgreSQL-14, PostgreSQL-15, PostgreSQL-16, PostgreSQL-17<br/>- MySQL: MySQL-8<br/><br/>Example: "PostgreSQL-15"<br/><br/>Engine upgrade: changing the version of an existing instance runs a blue/green<br/>upgrade in the provider. Writes made between the snapshot and the switch are<br/>lost, scaleway\_rdb\_acl may need a second apply because it uses the instance ID,<br/>and the apply must never be re-run while an upgrade is in progress. | `string` | `null` | no |
 | <a name="input_init_settings"></a> [init\_settings](#input\_init\_settings) | Initial database engine settings applied at creation.<br/><br/>These settings are applied only when the instance is first created<br/>and cannot be changed afterward without recreating the instance.<br/><br/>Use with caution - most settings should go in 'settings' instead. | `map(string)` | `{}` | no |
 | <a name="input_is_ha_cluster"></a> [is\_ha\_cluster](#input\_is\_ha\_cluster) | Enable High Availability (HA) mode.<br/><br/>When enabled, creates a standby node with synchronous replication<br/>for automatic failover. Recommended for production workloads.<br/><br/>WARNING: Changing this value will recreate the instance.<br/>WARNING: HA clusters cost approximately 2x a standalone instance.<br/><br/>Default: false | `bool` | `false` | no |
 | <a name="input_logs_policy"></a> [logs\_policy](#input\_logs\_policy) | Configuration for database logs retention.<br/><br/>Controls how long logs are retained and how much disk they may use.<br/><br/>Configuration:<br/>- max\_age\_retention: Days to retain logs (1-365)<br/>- total\_disk\_retention: Maximum log storage in bytes (minimum 100000000 = 100MB) | <pre>object({<br/>    max_age_retention    = optional(number, 30)<br/>    total_disk_retention = optional(number, 100000000)<br/>  })</pre> | `null` | no |
-| <a name="input_manual_backups"></a> [manual\_backups](#input\_manual\_backups) | Map of manual database backups to create.<br/><br/>Manual backups are point-in-time exports of specific databases.<br/>They are independent of the automatic backup schedule.<br/><br/>expires\_at (optional) is the expiry of the backup, a UTC timestamp written<br/>YYYY-MM-DDTHH:MM:SSZ. Without it the backup never expires and is billed until<br/>deleted. The provider cannot remove an expiry once set.<br/><br/>Note: Manual backups are only available for instances with<br/>storage <= 585GB; a plan-time warning is raised when volume\_size\_in\_gb<br/>is larger. database\_name is not cross-checked against databases.<br/><br/>Example:<br/>{<br/>  app\_backup = {<br/>    database\_name = "application"<br/>    name          = "pre-migration-backup"<br/>    expires\_at    = "2027-01-31T00:00:00Z"<br/>  }<br/>} | <pre>map(object({<br/>    database_name = string<br/>    name          = string<br/>    expires_at    = optional(string)<br/>  }))</pre> | `{}` | no |
+| <a name="input_manual_backups"></a> [manual\_backups](#input\_manual\_backups) | Map of manual database backups to create.<br/><br/>Manual backups are point-in-time exports of specific databases.<br/>They are independent of the automatic backup schedule.<br/><br/>expires\_at (optional) is the expiry of the backup, a UTC timestamp written<br/>YYYY-MM-DDTHH:MM:SSZ. Without it the backup never expires and is billed until<br/>deleted. The provider cannot remove an expiry once set.<br/><br/>Note: Manual backups are only available for instances with<br/>storage <= 585GB; a plan-time warning is raised when volume.size\_in\_gb<br/>is larger. database\_name is not cross-checked against databases.<br/><br/>Example:<br/>{<br/>  app\_backup = {<br/>    database\_name = "application"<br/>    name          = "pre-migration-backup"<br/>    expires\_at    = "2027-01-31T00:00:00Z"<br/>  }<br/>} | <pre>map(object({<br/>    database_name = string<br/>    name          = string<br/>    expires_at    = optional(string)<br/>  }))</pre> | `{}` | no |
 | <a name="input_name"></a> [name](#input\_name) | Name of the RDB instance.<br/><br/>This is a human-readable identifier for the database instance.<br/>Must be unique within the project.<br/><br/>Naming rules:<br/>- Must start with a letter<br/>- Can contain letters, numbers, and hyphens<br/>- Must be 1-63 characters long | `string` | n/a | yes |
 | <a name="input_node_type"></a> [node\_type](#input\_node\_type) | The type of database instance node.<br/><br/>Node type determines CPU, RAM, and performance characteristics.<br/>Available types vary by region.<br/><br/>Common types:<br/>- Development: db-dev-s, db-dev-m, db-dev-l, db-dev-xl<br/>- General Purpose: db-gp-xs, db-gp-s, db-gp-m, db-gp-l, db-gp-xl<br/>- Play2: db-play2-pico, db-play2-nano, db-play2-micro<br/><br/>Example: "db-dev-s" | `string` | n/a | yes |
-| <a name="input_organization_id"></a> [organization\_id](#input\_organization\_id) | Scaleway Organization ID.<br/><br/>Required when using project\_name to look up the project.<br/>The organization is the top-level entity in Scaleway's hierarchy.<br/>Find this in the Scaleway Console under Organization Settings.<br/><br/>Format: UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx) | `string` | `null` | no |
 | <a name="input_private_network"></a> [private\_network](#input\_private\_network) | Private network configuration for the RDB instance.<br/><br/>Connecting to a private network provides isolated network access<br/>and is recommended for production environments.<br/><br/>Configuration:<br/>- pn\_id: The ID of the private network to connect to<br/>- ip\_net: Static IP address with CIDR notation (e.g., "192.168.1.10/24")<br/>- enable\_ipam: Use Scaleway IPAM for automatic IP assignment<br/><br/>Set exactly one of ip\_net or enable\_ipam = true: both together and<br/>neither are rejected (the provider fails at apply without one). | <pre>object({<br/>    pn_id       = string<br/>    ip_net      = optional(string)<br/>    enable_ipam = optional(bool, false)<br/>  })</pre> | `null` | no |
 | <a name="input_privileges"></a> [privileges](#input\_privileges) | Map of user privileges to grant on databases.<br/><br/>Each privilege grants a specific user access to a specific database.<br/>Both the user and database must exist (created via this module, as the<br/>admin user, or outside the module). The names are not cross-checked<br/>against users and databases: a wrong name fails at apply.<br/><br/>Permission levels:<br/>- none: No access<br/>- readonly: SELECT queries only<br/>- readwrite: SELECT, INSERT, UPDATE, DELETE<br/>- all: Full access including administrative operations<br/><br/>Example:<br/>{<br/>  app\_on\_appdb = {<br/>    user\_name     = "app\_service"<br/>    database\_name = "application"<br/>    permission    = "readwrite"<br/>  }<br/>  readonly\_on\_analytics = {<br/>    user\_name     = "reporter"<br/>    database\_name = "analytics"<br/>    permission    = "readonly"<br/>  }<br/>} | <pre>map(object({<br/>    user_name     = string<br/>    database_name = string<br/>    permission    = string<br/>  }))</pre> | `{}` | no |
-| <a name="input_project_id"></a> [project\_id](#input\_project\_id) | Scaleway Project ID where the RDB instance will be created.<br/><br/>Either provide project\_id directly, or use organization\_id + project\_name<br/>to look up the project. If neither is provided, uses the default project<br/>from provider configuration.<br/><br/>Format: UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx) | `string` | `null` | no |
-| <a name="input_project_name"></a> [project\_name](#input\_project\_name) | Scaleway Project name where resources will be created.<br/><br/>Use this with organization\_id to look up the project by name.<br/>The project ID will be automatically resolved from this name.<br/><br/>Naming rules:<br/>- Must start with a lowercase letter<br/>- Can contain lowercase letters, numbers, and hyphens<br/>- Must be 1-63 characters long | `string` | `null` | no |
+| <a name="input_project_id"></a> [project\_id](#input\_project\_id) | Scaleway Project ID where the RDB instance will be created.<br/><br/>Leave null to use the default project of the provider configuration.<br/>The project of the instance is exposed by the project\_id output.<br/><br/>Format: UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx) | `string` | `null` | no |
+| <a name="input_public_endpoint"></a> [public\_endpoint](#input\_public\_endpoint) | Keep a public endpoint next to the private network.<br/><br/>Only with private\_network: the instance then answers on both the private<br/>network and a public endpoint (reach it through acl\_rules). Leave false<br/>for a private-only instance. Without private\_network the instance is<br/>always public and this must stay false.<br/><br/>Default: false | `bool` | `false` | no |
 | <a name="input_read_replicas"></a> [read\_replicas](#input\_read\_replicas) | Map of read replicas to create for read scaling.<br/><br/>Read replicas provide read-only copies of the database for<br/>scaling read-heavy workloads. Data is asynchronously replicated<br/>from the primary instance.<br/><br/>Limits:<br/>- Maximum 3 read replicas per instance<br/>- Read replicas are read-only (cannot write)<br/>- Replication lag may occur<br/><br/>Example:<br/>{<br/>  replica\_1 = {<br/>    region    = "nl-ams"<br/>    same\_zone = false<br/>  }<br/>  replica\_2 = {<br/>    same\_zone = true<br/>    private\_network = {<br/>      pn\_id       = "pn-xxxxx"<br/>      enable\_ipam = true<br/>    }<br/>  }<br/>} | <pre>map(object({<br/>    region    = optional(string)<br/>    same_zone = optional(bool, false)<br/>    private_network = optional(object({<br/>      pn_id       = string<br/>      ip_net      = optional(string)<br/>      enable_ipam = optional(bool, false)<br/>    }))<br/>  }))</pre> | `{}` | no |
 | <a name="input_region"></a> [region](#input\_region) | Scaleway region where the RDB instance will be deployed.<br/><br/>Available regions:<br/>- fr-par: Paris, France<br/>- nl-ams: Amsterdam, Netherlands<br/>- pl-waw: Warsaw, Poland<br/><br/>If not specified, uses the provider's default region. | `string` | `null` | no |
 | <a name="input_settings"></a> [settings](#input\_settings) | Database engine configuration settings.<br/><br/>These settings configure the database engine behavior.<br/>Available settings depend on the engine type.<br/><br/>Example for PostgreSQL:<br/>{<br/>  "max\_connections"       = "200"<br/>  "effective\_cache\_size"  = "1GB"<br/>}<br/><br/>Example for MySQL:<br/>{<br/>  "max\_connections" = "200"<br/>} | `map(string)` | `{}` | no |
-| <a name="input_tags"></a> [tags](#input\_tags) | Tags to apply to the RDB instance (the other resources do not take tags).<br/><br/>Tags are key-value pairs used for resource organization and filtering.<br/>They are converted to Scaleway's tag format: "key=value".<br/><br/>Example:<br/>{<br/>  environment = "production"<br/>  team        = "platform"<br/>} | `map(string)` | `{}` | no |
-| <a name="input_users"></a> [users](#input\_users) | Map of database users to create.<br/><br/>Each user is identified by a unique key used for Terraform resource<br/>addressing. Users are created on the RDB instance and can be granted<br/>privileges on specific databases.<br/><br/>Set exactly one of password or password\_wo. password\_wo is write-only<br/>(never stored in state); bump password\_wo\_version to change it.<br/>Unlike admin\_user\_password\_wo it cannot be ephemeral, because this map<br/>is iterated with for\_each: its value stays in the plan file.<br/><br/>Password requirements:<br/>- 8 to 128 characters<br/>- At least one uppercase letter<br/>- At least one lowercase letter<br/>- At least one digit<br/>- At least one special character<br/><br/>Example:<br/>{<br/>  app\_user = {<br/>    name     = "app\_service"<br/>    password = "SecureP@ssw0rd!"<br/>    is\_admin = false<br/>  }<br/>  admin\_user = {<br/>    name     = "dba"<br/>    password = "AdminP@ssw0rd!"<br/>    is\_admin = true<br/>  }<br/>} | <pre>map(object({<br/>    name                = string<br/>    password            = optional(string)<br/>    password_wo         = optional(string) # write-only: never stored in state (OpenTofu/Terraform >= 1.11)<br/>    password_wo_version = optional(number) # bump to apply a new password_wo<br/>    is_admin            = optional(bool, false)<br/>  }))</pre> | `{}` | no |
-| <a name="input_volume_size_in_gb"></a> [volume\_size\_in\_gb](#input\_volume\_size\_in\_gb) | Size of the storage volume in gigabytes.<br/><br/>Required for sbs\_5k and sbs\_15k volume types.<br/>Must be a multiple of 5 for block storage types.<br/><br/>Minimum: 5 GB<br/>Maximum: Varies by node type | `number` | `null` | no |
-| <a name="input_volume_type"></a> [volume\_type](#input\_volume\_type) | Type of storage volume for the database.<br/><br/>Available types:<br/>- lssd: Local SSD (fastest, default)<br/>- sbs\_5k: Block Storage with 5,000 IOPS (scalable, requires volume\_size\_in\_gb)<br/>- sbs\_15k: Block Storage with 15,000 IOPS (scalable, requires volume\_size\_in\_gb)<br/><br/>Note: sbs\_5k and sbs\_15k require volume\_size\_in\_gb to be set.<br/>Note: bssd is deprecated and no longer supported by Scaleway. | `string` | `"lssd"` | no |
+| <a name="input_tags"></a> [tags](#input\_tags) | Tags to apply to the RDB instance (the other resources do not take tags).<br/><br/>Scaleway tags are plain strings, by convention "key=value". Duplicates<br/>are removed.<br/><br/>Example: ["environment=production", "team=platform"] | `list(string)` | `[]` | no |
+| <a name="input_user_passwords"></a> [user\_passwords](#input\_user\_passwords) | Passwords of the users, keyed like users.<br/><br/>Sent through the write-only password\_wo argument: the values are never<br/>stored in the state or the plan file (OpenTofu/Terraform >= 1.11). Provide<br/>them from an ephemeral source (secrets manager, ephemeral resource) or<br/>TF\_VAR\_user\_passwords. Every key of users needs an entry, and every key<br/>must be a key of users.<br/><br/>Password requirements:<br/>- 8 to 128 characters<br/>- At least one uppercase letter<br/>- At least one lowercase letter<br/>- At least one digit<br/>- At least one special character (!@#$%^&*()\_+-=[]{}\|;:,.<>?) | `map(string)` | `{}` | no |
+| <a name="input_users"></a> [users](#input\_users) | Map of database users to create.<br/><br/>Each user is identified by a unique key used for Terraform resource<br/>addressing. Users are created on the RDB instance and can be granted<br/>privileges on specific databases.<br/><br/>The password of each user comes from user\_passwords, under the same key.<br/>password\_version is the write-only version: bump it to apply a new password.<br/><br/>Example:<br/>{<br/>  app\_user = {<br/>    name     = "app\_service"<br/>    is\_admin = false<br/>  }<br/>  admin\_user = {<br/>    name             = "dba"<br/>    is\_admin         = true<br/>    password\_version = 2<br/>  }<br/>} | <pre>map(object({<br/>    name             = string<br/>    is_admin         = optional(bool, false)<br/>    password_version = optional(number, 1)<br/>  }))</pre> | `{}` | no |
+| <a name="input_volume"></a> [volume](#input\_volume) | Storage volume of the database.<br/><br/>- type: lssd (local SSD, fastest, default), sbs\_5k or sbs\_15k (block<br/>  storage with 5,000 or 15,000 IOPS)<br/>- size\_in\_gb: 5 to 10000. Required for sbs\_5k and sbs\_15k, in multiples of 5<br/><br/>Note: bssd is deprecated and no longer supported by Scaleway.<br/><br/>Example: { type = "sbs\_5k", size\_in\_gb = 100 } | <pre>object({<br/>    type       = optional(string, "lssd")<br/>    size_in_gb = optional(number)<br/>  })</pre> | `{}` | no |
 
 ## Outputs
 
 | Name | Description |
 |------|-------------|
-| <a name="output_acl_id"></a> [acl\_id](#output\_acl\_id) | The ID of the ACL resource. |
-| <a name="output_acl_rules"></a> [acl\_rules](#output\_acl\_rules) | The ACL rules applied to the instance. |
-| <a name="output_admin_password"></a> [admin\_password](#output\_admin\_password) | The admin user password.<br/><br/>Returns admin\_user\_password if it was set, otherwise the password<br/>attribute of the instance. It is null when admin\_user\_password\_wo is<br/>used (write-only values are never stored) or no admin user is set.<br/><br/>WARNING: This is sensitive data - handle with care. |
-| <a name="output_backup_enabled"></a> [backup\_enabled](#output\_backup\_enabled) | Whether automated backups are enabled. |
-| <a name="output_connection_host"></a> [connection\_host](#output\_connection\_host) | The hostname or IP address for database connections. |
-| <a name="output_connection_port"></a> [connection\_port](#output\_connection\_port) | The port for database connections. |
-| <a name="output_connection_string"></a> [connection\_string](#output\_connection\_string) | Database connection string.<br/><br/>For PostgreSQL: postgres://user:password@host:port/database?sslmode=require<br/>For MySQL: mysql://user:password@host:port/database<br/><br/>Note: This output requires admin\_user\_name and admin\_user\_password<br/>(null when using admin\_user\_password\_wo). |
-| <a name="output_database_ids"></a> [database\_ids](#output\_database\_ids) | Map of database keys to their IDs. |
-| <a name="output_databases"></a> [databases](#output\_databases) | Map of database keys to their full details. |
-| <a name="output_encryption_at_rest_enabled"></a> [encryption\_at\_rest\_enabled](#output\_encryption\_at\_rest\_enabled) | Whether encryption at rest is enabled. |
+| <a name="output_acl_id"></a> [acl\_id](#output\_acl\_id) | The ID of the ACL resource, null when there are no acl\_rules. |
+| <a name="output_connection_host"></a> [connection\_host](#output\_connection\_host) | The IP address for database connections: the public endpoint, or the private network endpoint when there is none. |
+| <a name="output_connection_port"></a> [connection\_port](#output\_connection\_port) | The port for database connections: the public endpoint, or the private network endpoint when there is none. |
+| <a name="output_databases"></a> [databases](#output\_databases) | Map of database keys to their details. |
 | <a name="output_engine_default_port"></a> [engine\_default\_port](#output\_engine\_default\_port) | The default port for the database engine (5432 for PostgreSQL, 3306 for MySQL). |
 | <a name="output_engine_type"></a> [engine\_type](#output\_engine\_type) | The detected engine type (postgresql or mysql). |
 | <a name="output_instance_certificate"></a> [instance\_certificate](#output\_instance\_certificate) | The PEM-encoded TLS certificate for secure connections. |
-| <a name="output_instance_endpoint_ip"></a> [instance\_endpoint\_ip](#output\_instance\_endpoint\_ip) | The IP address of the RDB instance endpoint (deprecated, use connection\_host instead). |
-| <a name="output_instance_endpoint_port"></a> [instance\_endpoint\_port](#output\_instance\_endpoint\_port) | The port of the RDB instance endpoint (deprecated, use connection\_port instead). |
 | <a name="output_instance_engine"></a> [instance\_engine](#output\_instance\_engine) | The database engine and version. |
 | <a name="output_instance_id"></a> [instance\_id](#output\_instance\_id) | The ID of the RDB instance. |
-| <a name="output_instance_is_ha_cluster"></a> [instance\_is\_ha\_cluster](#output\_instance\_is\_ha\_cluster) | Whether the instance is a high availability cluster. |
-| <a name="output_instance_load_balancer"></a> [instance\_load\_balancer](#output\_instance\_load\_balancer) | Load balancer endpoint information for the RDB instance. |
-| <a name="output_instance_name"></a> [instance\_name](#output\_instance\_name) | The name of the RDB instance. |
-| <a name="output_instance_node_type"></a> [instance\_node\_type](#output\_instance\_node\_type) | The node type of the RDB instance. |
-| <a name="output_instance_private_network"></a> [instance\_private\_network](#output\_instance\_private\_network) | Private network endpoint information for the RDB instance. |
+| <a name="output_instance_load_balancer"></a> [instance\_load\_balancer](#output\_instance\_load\_balancer) | Public (load balancer) endpoint of the RDB instance, null when it has none. |
+| <a name="output_instance_private_network"></a> [instance\_private\_network](#output\_instance\_private\_network) | Private network endpoint of the RDB instance, null when it has none. |
 | <a name="output_instance_region"></a> [instance\_region](#output\_instance\_region) | The region where the RDB instance is deployed. |
 | <a name="output_manual_backups"></a> [manual\_backups](#output\_manual\_backups) | Map of manual backup keys to their details. |
 | <a name="output_privileges"></a> [privileges](#output\_privileges) | Map of privilege keys to their details. |
-| <a name="output_project_id"></a> [project\_id](#output\_project\_id) | The ID of the Scaleway project (resolved from project\_name or provided directly). |
-| <a name="output_read_replicas"></a> [read\_replicas](#output\_read\_replicas) | Map of read replica keys to their endpoint information. |
-| <a name="output_user_names"></a> [user\_names](#output\_user\_names) | Map of user keys to their usernames (passwords not exposed). |
+| <a name="output_project_id"></a> [project\_id](#output\_project\_id) | The ID of the Scaleway project of the instance (the provider default project when the project\_id input is null). |
+| <a name="output_read_replicas"></a> [read\_replicas](#output\_read\_replicas) | Map of read replica keys to their endpoint information (ip, port and hostname). |
 | <a name="output_users"></a> [users](#output\_users) | Map of user keys to their details (passwords not exposed). |
 <!-- END_TF_DOCS -->
 

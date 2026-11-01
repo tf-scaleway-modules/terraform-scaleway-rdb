@@ -6,7 +6,7 @@
 # ║  - Multiple databases and users                                              ║
 # ║  - Granular privileges                                                       ║
 # ║  - Read replicas                                                             ║
-# ║  - Private network (optional)                                                ║
+# ║  - Private network, optionally with a public endpoint                        ║
 # ║  - Encryption at rest                                                        ║
 # ║  - Comprehensive ACL rules                                                   ║
 # ║  - Manual backup with expiry                                                 ║
@@ -25,15 +25,22 @@ provider "scaleway" {
 # Variables
 # ==============================================================================
 
-variable "organization_id" {
-  description = "Your Scaleway Organization ID"
+variable "project_id" {
+  description = "Scaleway Project ID of the instance (null = default project of the provider)"
   type        = string
+  default     = null
 }
 
-variable "project_name" {
-  description = "Your Scaleway Project name"
+variable "private_network_id" {
+  description = "Private network to attach the production instance to (null = public instance only)"
   type        = string
-  default     = "default"
+  default     = null
+}
+
+variable "enable_public_endpoint" {
+  description = "Keep a public endpoint next to the private network (reach it through acl_rules); needs private_network_id"
+  type        = bool
+  default     = false
 }
 
 variable "admin_password" {
@@ -50,24 +57,24 @@ variable "enable_staging_clone" {
 }
 
 variable "app_password" {
-  description = "Password for the application user"
+  description = "Password for the application user (set TF_VAR_app_password; never stored in state or plan)"
   type        = string
   sensitive   = true
-  default     = "fs652Af@d$s"
+  ephemeral   = true
 }
 
 variable "readonly_password" {
-  description = "Password for the readonly user"
+  description = "Password for the readonly user (set TF_VAR_readonly_password; never stored in state or plan)"
   type        = string
   sensitive   = true
-  default     = "fs652Af@d$s"
+  ephemeral   = true
 }
 
 variable "analytics_password" {
-  description = "Password for the analytics user"
+  description = "Password for the analytics user (set TF_VAR_analytics_password; never stored in state or plan)"
   type        = string
   sensitive   = true
-  default     = "fs652Af@d$s"
+  ephemeral   = true
 }
 
 # ==============================================================================
@@ -78,8 +85,7 @@ module "production_database" {
   source = "../../"
 
   # Project configuration
-  organization_id = var.organization_id
-  project_name    = var.project_name
+  project_id = var.project_id
 
   # Instance configuration
   name          = "prod-postgres-cluster"
@@ -89,22 +95,32 @@ module "production_database" {
   is_ha_cluster = true
 
   # Storage configuration
-  volume_type       = "sbs_5k"
-  volume_size_in_gb = 100
+  volume = {
+    type       = "sbs_5k"
+    size_in_gb = 100
+  }
 
   # Admin user
-  admin_user_name                = "admin"
-  admin_user_password_wo         = var.admin_password
-  admin_user_password_wo_version = 1
+  admin_user          = { name = "admin", password_version = 1 }
+  admin_user_password = var.admin_password
 
   # Security
   encryption_at_rest = true
 
   # Backup configuration
-  backup_enabled            = true
-  backup_schedule_frequency = 12 # Every 12 hours
-  backup_schedule_retention = 30 # 30 days retention
-  backup_same_region        = false
+  backup = {
+    enabled         = true
+    frequency_hours = 12 # Every 12 hours
+    retention_days  = 30 # 30 days retention
+    same_region     = false
+  }
+
+  # Private network, with an optional public endpoint next to it
+  private_network = var.private_network_id == null ? null : {
+    pn_id       = var.private_network_id
+    enable_ipam = true
+  }
+  public_endpoint = var.enable_public_endpoint
 
   # Engine settings
   settings = {
@@ -134,19 +150,23 @@ module "production_database" {
   users = {
     app = {
       name     = "app_service"
-      password = var.app_password
       is_admin = false
     }
     readonly = {
       name     = "readonly_user"
-      password = var.readonly_password
       is_admin = false
     }
     analytics = {
       name     = "analytics_service"
-      password = var.analytics_password
       is_admin = false
     }
+  }
+
+  # Passwords, keyed like users (write-only, never stored in state or plan)
+  user_passwords = {
+    app       = var.app_password
+    readonly  = var.readonly_password
+    analytics = var.analytics_password
   }
 
   # Privileges - Principle of least privilege
@@ -213,13 +233,13 @@ module "production_database" {
   read_replicas = {}
 
   # Tags
-  tags = {
-    environment  = "production"
-    team         = "platform"
-    cost_center  = "engineering"
-    managed_by   = "terraform"
-    backup_class = "gold"
-  }
+  tags = [
+    "environment=production",
+    "team=platform",
+    "cost_center=engineering",
+    "managed_by=terraform",
+    "backup_class=gold",
+  ]
 }
 
 # ==============================================================================
@@ -243,13 +263,12 @@ module "staging_database" {
   region        = "fr-par"
   is_ha_cluster = true
 
-  volume_type       = "sbs_5k"
-  volume_size_in_gb = 100
-
-  tags = {
-    environment = "staging"
-    managed_by  = "terraform"
+  volume = {
+    type       = "sbs_5k"
+    size_in_gb = 100
   }
+
+  tags = ["environment=staging", "managed_by=terraform"]
 }
 
 # ==============================================================================
@@ -292,16 +311,6 @@ output "privileges" {
 output "read_replicas" {
   description = "Read replica endpoints"
   value       = module.production_database.read_replicas
-}
-
-output "encryption_enabled" {
-  description = "Whether encryption at rest is enabled"
-  value       = module.production_database.encryption_at_rest_enabled
-}
-
-output "backup_enabled" {
-  description = "Whether automated backups are enabled"
-  value       = module.production_database.backup_enabled
 }
 
 output "staging_clone_endpoint" {
