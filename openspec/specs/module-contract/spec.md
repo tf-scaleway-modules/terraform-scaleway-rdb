@@ -6,7 +6,7 @@ Supported tool and provider versions, input and output contract and write-only p
 ## Requirements
 
 ### Requirement: Supported tool and provider versions
-The module SHALL declare `required_version = ">= 1.11.0"` and the provider `scaleway/scaleway` with version constraint `~> 2.89` in `versions.tf`, because `clone_from` exists from provider 2.89.0.
+The module SHALL declare `required_version = ">= 1.11.0"` and the provider `scaleway/scaleway` with version constraint `~> 2.89` in `versions.tf`, because `clone_from` exists from provider 2.89.0. Both OpenTofu and Terraform SHALL accept the module at that floor; the single `required_version` constraint serves both and no OpenTofu-only construct is used.
 
 #### Scenario: Older OpenTofu or Terraform
 - **WHEN** the module is initialised with OpenTofu or Terraform older than 1.11.0
@@ -19,6 +19,10 @@ The module SHALL declare `required_version = ">= 1.11.0"` and the provider `scal
 #### Scenario: Older provider locked by the caller
 - **WHEN** the caller's lock file pins `scaleway/scaleway` 2.86.0
 - **THEN** `init` fails until the caller runs `init -upgrade`
+
+#### Scenario: Terraform consumer
+- **WHEN** the module and each example under `examples/` are initialised with `terraform init -backend=false` and checked with `terraform validate` on Terraform 1.11.0 or later
+- **THEN** validation succeeds, exactly as with OpenTofu
 
 ### Requirement: No provider or backend configuration
 The module SHALL NOT contain a `provider` block or a `backend` block; the caller configures the Scaleway provider (credentials, default region, default project).
