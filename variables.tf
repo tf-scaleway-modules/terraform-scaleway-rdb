@@ -10,14 +10,7 @@
 # ==============================================================================
 
 variable "project_id" {
-  description = <<-EOT
-    Scaleway Project ID where the RDB instance will be created.
-
-    Leave null to use the default project of the provider configuration.
-    The project of the instance is exposed by the project_id output.
-
-    Format: UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
-  EOT
+  description = "Scaleway Project ID (UUID) in which the RDB instance is created. `null` uses the default project of the provider configuration; the project actually used is exposed by the `project_id` output."
   type        = string
   default     = null
 
@@ -32,17 +25,7 @@ variable "project_id" {
 # ==============================================================================
 
 variable "name" {
-  description = <<-EOT
-    Name of the RDB instance.
-
-    This is a human-readable identifier for the database instance.
-    Must be unique within the project.
-
-    Naming rules:
-    - Must start with a letter
-    - Can contain letters, numbers, and hyphens
-    - Must be 1-63 characters long
-  EOT
+  description = "Name of the RDB instance, unique within the project. Must start with a letter, contain only letters, numbers and hyphens, and be 1 to 63 characters long."
   type        = string
 
   validation {
@@ -52,19 +35,7 @@ variable "name" {
 }
 
 variable "node_type" {
-  description = <<-EOT
-    The type of database instance node.
-
-    Node type determines CPU, RAM, and performance characteristics.
-    Available types vary by region.
-
-    Common types:
-    - Development: db-dev-s, db-dev-m, db-dev-l, db-dev-xl
-    - General Purpose: db-gp-xs, db-gp-s, db-gp-m, db-gp-l, db-gp-xl
-    - Play2: db-play2-pico, db-play2-nano, db-play2-micro
-
-    Example: "db-dev-s"
-  EOT
+  description = "Node type of the database instance, which sets its CPU, RAM and performance (for example `db-dev-s`, `db-gp-xs` or `db-play2-pico`). Must start with `db-dev-`, `db-gp-` or `db-play2-`; availability varies by region. See Input reference in the README for the common types."
   type        = string
 
   validation {
@@ -74,23 +45,7 @@ variable "node_type" {
 }
 
 variable "engine" {
-  description = <<-EOT
-    Database engine and version.
-
-    Set exactly one of engine or clone_from. With clone_from, leave engine null:
-    the clone has the engine of its source.
-
-    Supported engines:
-    - PostgreSQL: PostgreSQL-11, PostgreSQL-12, PostgreSQL-13, PostgreSQL-14, PostgreSQL-15, PostgreSQL-16, PostgreSQL-17
-    - MySQL: MySQL-8
-
-    Example: "PostgreSQL-15"
-
-    Engine upgrade: changing the version of an existing instance runs a blue/green
-    upgrade in the provider. Writes made between the snapshot and the switch are
-    lost, scaleway_rdb_acl may need a second apply because it uses the instance ID,
-    and the apply must never be re-run while an upgrade is in progress.
-  EOT
+  description = "Database engine and version, for example `PostgreSQL-15` or `MySQL-8` (PostgreSQL-11 to PostgreSQL-17, MySQL-8). Set exactly one of `engine` or `clone_from`; `null` is only valid with `clone_from`, the clone then has the engine of its source. See Input reference in the README for the engine upgrade behaviour."
   type        = string
   default     = null
 
@@ -101,27 +56,7 @@ variable "engine" {
 }
 
 variable "clone_from" {
-  description = <<-EOT
-    Create the instance as a clone of an existing Database Instance.
-
-    Accepts the instance UUID or <region>/<UUID>. The clone keeps the databases, users and
-    permissions of the source; declare in databases, users and privileges only new ones
-    (an existing name fails at apply with an API conflict). Provider 2.89.0 or later.
-
-    Rules:
-    - Leave engine null: the clone has the engine of the source.
-    - Leave admin_user and admin_user_password null: the clone keeps the users of the source.
-    - volume.type, volume.size_in_gb (block storage), encryption_at_rest and init_settings are not
-      applied at clone time and must equal the source values (checked at plan time).
-    - A high-availability source needs is_ha_cluster = true.
-    - project_id is not applied: the clone stays in the project of the source.
-    - Without private_network the clone keeps the public endpoint created by the clone;
-      with it the clone is private unless public_endpoint is true.
-
-    WARNING: Setting this value on an existing instance will recreate the instance.
-
-    Example: "fr-par/11111111-2222-3333-4444-555555555555"
-  EOT
+  description = "Creates the instance as a clone of an existing Database Instance, given as its UUID or `<region>/<UUID>`; `null` creates a new instance. Setting it on an existing instance recreates the instance. See Input reference in the README for the rules that apply to a clone."
   type        = string
   default     = null
 
@@ -132,16 +67,7 @@ variable "clone_from" {
 }
 
 variable "region" {
-  description = <<-EOT
-    Scaleway region where the RDB instance will be deployed.
-
-    Available regions:
-    - fr-par: Paris, France
-    - nl-ams: Amsterdam, Netherlands
-    - pl-waw: Warsaw, Poland
-
-    If not specified, uses the provider's default region.
-  EOT
+  description = "Scaleway region in which the RDB instance is deployed: `fr-par`, `nl-ams` or `pl-waw`. `null` uses the region of the provider configuration."
   type        = string
   default     = null
 
@@ -152,33 +78,13 @@ variable "region" {
 }
 
 variable "is_ha_cluster" {
-  description = <<-EOT
-    Enable High Availability (HA) mode.
-
-    When enabled, creates a standby node with synchronous replication
-    for automatic failover. Recommended for production workloads.
-
-    WARNING: Changing this value will recreate the instance.
-    WARNING: HA clusters cost approximately 2x a standalone instance.
-
-    Default: false
-  EOT
+  description = "Enables High Availability: a standby node with synchronous replication for automatic failover, recommended for production. Changing it recreates the instance and an HA cluster costs about twice a standalone instance."
   type        = bool
   default     = false
 }
 
 variable "volume" {
-  description = <<-EOT
-    Storage volume of the database.
-
-    - type: lssd (local SSD, fastest, default), sbs_5k or sbs_15k (block
-      storage with 5,000 or 15,000 IOPS)
-    - size_in_gb: 5 to 10000. Required for sbs_5k and sbs_15k, in multiples of 5
-
-    Note: bssd is deprecated and no longer supported by Scaleway.
-
-    Example: { type = "sbs_5k", size_in_gb = 100 }
-  EOT
+  description = "Storage volume of the database: `type` is `lssd` (local SSD, default), `sbs_5k` or `sbs_15k` (block storage with 5,000 or 15,000 IOPS) and `size_in_gb` is 5 to 10000. See Input reference in the README for every attribute."
   type = object({
     type       = optional(string, "lssd")
     size_in_gb = optional(number)
@@ -201,23 +107,7 @@ variable "volume" {
 # ==============================================================================
 
 variable "admin_user" {
-  description = <<-EOT
-    Initial admin user created with the instance.
-
-    - name: user name, with full administrative privileges on the instance
-    - password_version: version of the write-only password; bump it to apply a
-      new admin_user_password (default 1)
-
-    Set together with admin_user_password, or leave both null to skip the
-    initial admin user.
-
-    Naming rules:
-    - Must start with a letter
-    - Can contain letters, numbers, and underscores
-    - Must be 1-63 characters long
-
-    Example: { name = "admin" }
-  EOT
+  description = "Initial admin user created with the instance, with full administrative privileges: `name` and an optional `password_version` (default 1) that is bumped to apply a new `admin_user_password`. Set it together with `admin_user_password`, or leave both `null` to skip the initial admin user. See Input reference in the README for the naming rules."
   type = object({
     name             = string
     password_version = optional(number, 1)
@@ -231,22 +121,7 @@ variable "admin_user" {
 }
 
 variable "admin_user_password" {
-  description = <<-EOT
-    Password of the initial admin user (admin_user).
-
-    Sent through the write-only password_wo argument: never stored in the
-    state or the plan file (OpenTofu/Terraform >= 1.11). Provide it from an
-    ephemeral source (secrets manager, ephemeral resource) or
-    TF_VAR_admin_user_password. Bump admin_user.password_version to apply a
-    new value.
-
-    Password requirements:
-    - 8 to 128 characters
-    - At least one uppercase letter
-    - At least one lowercase letter
-    - At least one digit
-    - At least one special character (!@#$%^&*()_+-=[]{}|;:,.<>?)
-  EOT
+  description = "Password of the initial admin user (`admin_user`), sent through the write-only `password_wo` argument so it never lands in the state or the plan (OpenTofu/Terraform 1.11 or later). Provide it from an ephemeral source or `TF_VAR_admin_user_password`; bump `admin_user.password_version` to apply a new value. See Input reference in the README for the password requirements."
   type        = string
   default     = null
   sensitive   = true
@@ -270,17 +145,7 @@ variable "admin_user_password" {
 # ==============================================================================
 
 variable "encryption_at_rest" {
-  description = <<-EOT
-    Enable encryption at rest using LUKS.
-
-    When enabled, all data, logs, and snapshots are encrypted at the
-    storage volume level. Keys are managed by Scaleway.
-
-    WARNING: This setting is IRREVERSIBLE once enabled.
-    WARNING: Initial encryption may take ~1 hour per 100GB of data.
-
-    Default: true (recommended for production)
-  EOT
+  description = "Enables LUKS encryption at rest of the data, logs and snapshots, with keys managed by Scaleway; recommended for production. It is irreversible once enabled and the initial encryption takes about 1 hour per 100 GB of data."
   type        = bool
   default     = true
 }
@@ -290,19 +155,7 @@ variable "encryption_at_rest" {
 # ==============================================================================
 
 variable "backup" {
-  description = <<-EOT
-    Automated backup settings.
-
-    - enabled: create automated backups (default true, strongly recommended for production)
-    - frequency_hours: hours between backups, 1 to 168 (default 24)
-    - retention_days: days to keep backups, 1 to 365 (default 14)
-    - same_region: store backups in the region of the instance; false (default)
-      stores them in another region for geographic redundancy
-
-    frequency_hours, retention_days and same_region apply only when enabled is true.
-
-    Example: { frequency_hours = 12, retention_days = 30 }
-  EOT
+  description = "Automated backup settings: `enabled` (default `true`), `frequency_hours` (1 to 168, default 24), `retention_days` (1 to 365, default 14) and `same_region` (default `false`, which stores backups in another region). See Input reference in the README for every attribute."
   type = object({
     enabled         = optional(bool, true)
     frequency_hours = optional(number, 24)
@@ -327,36 +180,13 @@ variable "backup" {
 # ==============================================================================
 
 variable "settings" {
-  description = <<-EOT
-    Database engine configuration settings.
-
-    These settings configure the database engine behavior.
-    Available settings depend on the engine type.
-
-    Example for PostgreSQL:
-    {
-      "max_connections"       = "200"
-      "effective_cache_size"  = "1GB"
-    }
-
-    Example for MySQL:
-    {
-      "max_connections" = "200"
-    }
-  EOT
+  description = "Database engine settings as a map of strings, for example `max_connections` set to `200`. The available settings depend on the engine."
   type        = map(string)
   default     = {}
 }
 
 variable "init_settings" {
-  description = <<-EOT
-    Initial database engine settings applied at creation.
-
-    These settings are applied only when the instance is first created
-    and cannot be changed afterward without recreating the instance.
-
-    Use with caution - most settings should go in 'settings' instead.
-  EOT
+  description = "Engine settings applied only when the instance is first created; they cannot be changed afterwards without recreating the instance. Most settings belong in `settings` instead."
   type        = map(string)
   default     = {}
 }
@@ -366,20 +196,7 @@ variable "init_settings" {
 # ==============================================================================
 
 variable "private_network" {
-  description = <<-EOT
-    Private network configuration for the RDB instance.
-
-    Connecting to a private network provides isolated network access
-    and is recommended for production environments.
-
-    Configuration:
-    - pn_id: The ID of the private network to connect to
-    - ip_net: Static IP address with CIDR notation (e.g., "192.168.1.10/24")
-    - enable_ipam: Use Scaleway IPAM for automatic IP assignment
-
-    Set exactly one of ip_net or enable_ipam = true: both together and
-    neither are rejected (the provider fails at apply without one).
-  EOT
+  description = "Private network of the RDB instance: `pn_id` is the private network ID and exactly one of `ip_net` (static IP in CIDR notation) or `enable_ipam = true` must be set. `null` keeps the instance on its public endpoint. See Input reference in the README for every attribute."
   type = object({
     pn_id       = string
     ip_net      = optional(string)
@@ -411,16 +228,7 @@ variable "private_network" {
 }
 
 variable "public_endpoint" {
-  description = <<-EOT
-    Keep a public endpoint next to the private network.
-
-    Only with private_network: the instance then answers on both the private
-    network and a public endpoint (reach it through acl_rules). Leave false
-    for a private-only instance. Without private_network the instance is
-    always public and this must stay false.
-
-    Default: false
-  EOT
+  description = "Keeps a public endpoint next to the private network, reachable through `acl_rules`. Only valid with `private_network`; without it the instance is always public and this must stay `false`, which gives a private-only instance."
   type        = bool
   default     = false
 }
@@ -430,14 +238,7 @@ variable "public_endpoint" {
 # ==============================================================================
 
 variable "tags" {
-  description = <<-EOT
-    Tags to apply to the RDB instance (the other resources do not take tags).
-
-    Scaleway tags are plain strings, by convention "key=value". Duplicates
-    are removed.
-
-    Example: ["environment=production", "team=platform"]
-  EOT
+  description = "Tags applied to the RDB instance, the only resource of the module that takes tags. Tags are plain strings, by convention `key=value`, and duplicates are removed."
   type        = list(string)
   default     = []
 }
@@ -447,22 +248,7 @@ variable "tags" {
 # ==============================================================================
 
 variable "databases" {
-  description = <<-EOT
-    Map of databases to create within the RDB instance.
-
-    Each database is identified by a unique key used for Terraform resource
-    addressing. The 'name' field is the actual database name.
-
-    Example:
-    {
-      app_db = {
-        name = "application"
-      }
-      analytics_db = {
-        name = "analytics"
-      }
-    }
-  EOT
+  description = "Map of databases to create in the RDB instance, keyed by a stable reference used for resource addressing; each entry sets the database `name`. See Input reference in the README for every attribute."
   type = map(object({
     name = string
   }))
@@ -481,29 +267,7 @@ variable "databases" {
 # ==============================================================================
 
 variable "users" {
-  description = <<-EOT
-    Map of database users to create.
-
-    Each user is identified by a unique key used for Terraform resource
-    addressing. Users are created on the RDB instance and can be granted
-    privileges on specific databases.
-
-    The password of each user comes from user_passwords, under the same key.
-    password_version is the write-only version: bump it to apply a new password.
-
-    Example:
-    {
-      app_user = {
-        name     = "app_service"
-        is_admin = false
-      }
-      admin_user = {
-        name             = "dba"
-        is_admin         = true
-        password_version = 2
-      }
-    }
-  EOT
+  description = "Map of database users to create, keyed by a stable reference that is also the key of the user password in `user_passwords`. Each entry sets `name`, `is_admin` and `password_version`. See Input reference in the README for every attribute."
   type = map(object({
     name             = string
     is_admin         = optional(bool, false)
@@ -520,22 +284,7 @@ variable "users" {
 }
 
 variable "user_passwords" {
-  description = <<-EOT
-    Passwords of the users, keyed like users.
-
-    Sent through the write-only password_wo argument: the values are never
-    stored in the state or the plan file (OpenTofu/Terraform >= 1.11). Provide
-    them from an ephemeral source (secrets manager, ephemeral resource) or
-    TF_VAR_user_passwords. Every key of users needs an entry, and every key
-    must be a key of users.
-
-    Password requirements:
-    - 8 to 128 characters
-    - At least one uppercase letter
-    - At least one lowercase letter
-    - At least one digit
-    - At least one special character (!@#$%^&*()_+-=[]{}|;:,.<>?)
-  EOT
+  description = "Passwords of the database users, keyed like `users`, sent through the write-only `password_wo` argument so they never land in the state or the plan (OpenTofu/Terraform 1.11 or later). Every key of `users` needs an entry and every key must be a key of `users`; provide them from an ephemeral source or `TF_VAR_user_passwords`. See Input reference in the README for the password requirements."
   type        = map(string)
   default     = {}
   sensitive   = true
@@ -565,34 +314,7 @@ variable "user_passwords" {
 # ==============================================================================
 
 variable "privileges" {
-  description = <<-EOT
-    Map of user privileges to grant on databases.
-
-    Each privilege grants a specific user access to a specific database.
-    Both the user and database must exist (created via this module, as the
-    admin user, or outside the module). The names are not cross-checked
-    against users and databases: a wrong name fails at apply.
-
-    Permission levels:
-    - none: No access
-    - readonly: SELECT queries only
-    - readwrite: SELECT, INSERT, UPDATE, DELETE
-    - all: Full access including administrative operations
-
-    Example:
-    {
-      app_on_appdb = {
-        user_name     = "app_service"
-        database_name = "application"
-        permission    = "readwrite"
-      }
-      readonly_on_analytics = {
-        user_name     = "reporter"
-        database_name = "analytics"
-        permission    = "readonly"
-      }
-    }
-  EOT
+  description = "Map of privileges granted to users on databases, keyed by a stable reference. Each entry sets `user_name`, `database_name` and `permission` (`none`, `readonly`, `readwrite` or `all`). See Input reference in the README for every attribute."
   type = map(object({
     user_name     = string
     database_name = string
@@ -613,31 +335,7 @@ variable "privileges" {
 # ==============================================================================
 
 variable "acl_rules" {
-  description = <<-EOT
-    Map of ACL rules to control network access to the RDB instance.
-
-    ACL rules define which IP addresses or CIDR ranges can connect
-    to the database. By default, Scaleway allows all IPs (0.0.0.0/0).
-    This module requires explicit ACL rules for security.
-
-    SECURITY: Do not use 0.0.0.0/0 in production unless absolutely
-    necessary. Use specific IP ranges or private networks instead.
-    0.0.0.0/0 is rejected unless allow_public_access is true; other very
-    wide ranges (prefix shorter than /8, such as 0.0.0.0/1) only raise a
-    plan-time warning. The Scaleway API does not support IPv6 ACL rules.
-
-    Example:
-    {
-      office = {
-        ip          = "203.0.113.0/24"
-        description = "Office network"
-      }
-      vpn = {
-        ip          = "10.0.0.0/8"
-        description = "VPN network"
-      }
-    }
-  EOT
+  description = "Map of ACL rules that control which IPv4 addresses or CIDR ranges can connect to the instance, keyed by a stable reference. Each entry sets `ip` and `description`; `0.0.0.0/0` is rejected unless `allow_public_access` is `true`. See Input reference in the README for every attribute and the security notes."
   type = map(object({
     ip          = string
     description = string
@@ -653,19 +351,7 @@ variable "acl_rules" {
 }
 
 variable "allow_public_access" {
-  description = <<-EOT
-    Allow unrestricted public access (0.0.0.0/0) in ACL rules and silence
-    the warning about other very wide ranges.
-
-    This is a safety flag to prevent accidental exposure of the database
-    to the public internet. Set to true only if you understand the
-    security implications.
-
-    WARNING: Enabling public access exposes your database to the internet.
-    Consider using private networks or specific IP allowlists instead.
-
-    Default: false
-  EOT
+  description = "Safety flag that allows unrestricted public access (`0.0.0.0/0`) in `acl_rules` and silences the warning about other very wide ranges. Enabling it exposes the database to the internet, so prefer private networks or specific IP allowlists."
   type        = bool
   default     = false
 }
@@ -675,33 +361,7 @@ variable "allow_public_access" {
 # ==============================================================================
 
 variable "read_replicas" {
-  description = <<-EOT
-    Map of read replicas to create for read scaling.
-
-    Read replicas provide read-only copies of the database for
-    scaling read-heavy workloads. Data is asynchronously replicated
-    from the primary instance.
-
-    Limits:
-    - Maximum 3 read replicas per instance
-    - Read replicas are read-only (cannot write)
-    - Replication lag may occur
-
-    Example:
-    {
-      replica_1 = {
-        region    = "nl-ams"
-        same_zone = false
-      }
-      replica_2 = {
-        same_zone = true
-        private_network = {
-          pn_id       = "pn-xxxxx"
-          enable_ipam = true
-        }
-      }
-    }
-  EOT
+  description = "Map of read replicas (at most 3), keyed by a stable reference. Each entry sets an optional `region`, `same_zone` and an optional `private_network`. See Input reference in the README for every attribute."
   type = map(object({
     region    = optional(string)
     same_zone = optional(bool, false)
@@ -748,29 +408,7 @@ variable "read_replicas" {
 # ==============================================================================
 
 variable "manual_backups" {
-  description = <<-EOT
-    Map of manual database backups to create.
-
-    Manual backups are point-in-time exports of specific databases.
-    They are independent of the automatic backup schedule.
-
-    expires_at (optional) is the expiry of the backup, a UTC timestamp written
-    YYYY-MM-DDTHH:MM:SSZ. Without it the backup never expires and is billed until
-    deleted. The provider cannot remove an expiry once set.
-
-    Note: Manual backups are only available for instances with
-    storage <= 585GB; a plan-time warning is raised when volume.size_in_gb
-    is larger. database_name is not cross-checked against databases.
-
-    Example:
-    {
-      app_backup = {
-        database_name = "application"
-        name          = "pre-migration-backup"
-        expires_at    = "2027-01-31T00:00:00Z"
-      }
-    }
-  EOT
+  description = "Map of manual database backups to create, keyed by a stable reference. Each entry sets `database_name`, `name` and an optional `expires_at` UTC timestamp. See Input reference in the README for every attribute."
   type = map(object({
     database_name = string
     name          = string
@@ -801,15 +439,7 @@ variable "manual_backups" {
 # ==============================================================================
 
 variable "logs_policy" {
-  description = <<-EOT
-    Configuration for database logs retention.
-
-    Controls how long logs are retained and how much disk they may use.
-
-    Configuration:
-    - max_age_retention: Days to retain logs (1-365)
-    - total_disk_retention: Maximum log storage in bytes (minimum 100000000 = 100MB)
-  EOT
+  description = "Retention of the database logs: `max_age_retention` in days (1 to 365, default 30) and `total_disk_retention` in bytes (at least 100000000, default 100000000). `null` keeps the provider default. See Input reference in the README for every attribute."
   type = object({
     max_age_retention    = optional(number, 30)
     total_disk_retention = optional(number, 100000000)
