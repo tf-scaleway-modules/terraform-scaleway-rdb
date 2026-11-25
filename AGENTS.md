@@ -1,7 +1,7 @@
 # AGENTS.md — terraform-modules-scaleway-rdb
 
 ## Project
-OpenTofu/Terraform module: one Scaleway Managed Database (RDB) instance with its
+OpenTofu (>= 1.11.0) and Terraform (>= 1.11.0) module: one Scaleway Managed Database (RDB) instance with its
 databases, users, privileges, ACL rules, manual backups and read replicas. Published
 on GitLab at `gitlab.com/leminnov/terraform/modules/scaleway-rdb`;
 consumers pin a git tag. Planning uses OpenSpec (`openspec/`; `openspec/specs/` is
@@ -76,7 +76,7 @@ Never deviate silently: add a `# DEVIATION(<spec-id>): <reason>` comment and lis
 in your summary.
 
 ## Commands
-- Format / validate: `tofu fmt -recursive`, `tofu init -backend=false && tofu validate`, `tflint --recursive`
+- Format / validate: `tofu fmt -recursive`, `tofu init -backend=false && tofu validate`, `terraform init -backend=false && terraform validate`, `tflint --recursive`
 - Tests: `tofu test` (unit tests in `tests/main.tftest.hcl`, mock provider, no server)
 - Everything incl. README regeneration: `pre-commit run -a`
 - Changelog: `mise run changelog` (git-cliff, from commit subjects)

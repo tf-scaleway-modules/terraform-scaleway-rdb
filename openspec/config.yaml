@@ -17,7 +17,7 @@ references:
     ref: v4.1.0
   - id: terraform
     remote: https://gitlab.com/leminnov/agentic-coding/openspec/terraform.git
-    ref: v1.2.6
+    ref: v2.1.0
 
 context: |
   Quality mandate: every artifact applies the non-negotiables of AGENTS.md

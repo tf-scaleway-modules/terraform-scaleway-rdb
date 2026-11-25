@@ -20,7 +20,7 @@ A **production-ready** Terraform/OpenTofu module for managing Scaleway Relationa
 
 ### Prerequisites
 
-- Terraform >= 1.11 or OpenTofu >= 1.11
+- OpenTofu >= 1.11.0 and Terraform >= 1.11.0
 - Scaleway account with API credentials configured
 - Scaleway provider >= 2.89
 
@@ -203,7 +203,7 @@ in progress.
 ### Upgrading from v2 to v3
 
 v3 removes the legacy input shapes. Run `tofu init -upgrade`; the provider floor (`~> 2.89`) and
-`required_version` (`>= 1.11`) are unchanged. No resource address changes, so no `moved` block and no
+`required_version` (`>= 1.11.0`) are unchanged. No resource address changes, so no `moved` block and no
 replacement: the first apply updates the instance and each user in place to the write-only password form.
 
 | v2 | v3 |
