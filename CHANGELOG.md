@@ -4,7 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-## [3.0.1](https://gitlab.com/leminnov/terraform/modules/scaleway-rdb/-/releases/v3.0.1) - 2026-11-25
+## [1.1.2](https://gitlab.com/leminnov/terraform/modules/scaleway-rdb/-/releases/v1.1.2) - 2025-12-25
+
+
+### 📝 Other
+
+- Creates CHANGELOG.md ([47a17ff4](https://gitlab.com/leminnov/terraform/modules/scaleway-rdb/-/commit/47a17ff46eb54989cf547f177984bec35131f29f))
+
+## [1.0.0](https://gitlab.com/leminnov/terraform/modules/scaleway-rdb/-/releases/v1.0.0) - 2025-12-24
 
 
 ### 👷 CI/CD
@@ -14,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 📝 Other
 
+- Update CHANGELOG.md for v3.0.1 ([0041b97f](https://gitlab.com/leminnov/terraform/modules/scaleway-rdb/-/commit/0041b97f7236b8f0b1b16bf4f236db100aeb87b4))
 - Validate the module with Terraform and pin both toolchains ([bffeed09](https://gitlab.com/leminnov/terraform/modules/scaleway-rdb/-/commit/bffeed09b5eaa8fb8c795f68352ba1b68d6d3307))
 - Rewrite input and output descriptions as single-line prose so they render on the Terraform Registry ([ecece3a3](https://gitlab.com/leminnov/terraform/modules/scaleway-rdb/-/commit/ecece3a33312ffb0aacf538186b9f4913413de33))
 - Send every password write-only, group instance inputs into objects, add a public endpoint and trim outputs ([102b502d](https://gitlab.com/leminnov/terraform/modules/scaleway-rdb/-/commit/102b502df503ac956d36be081098838e8350d4d9))
